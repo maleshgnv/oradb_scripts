@@ -28,4 +28,3 @@ Prompt Fetching execution plan for the SQLID .............
 
 REM SELECT * FROM table(DBMS_XPLAN.DISPLAY_CURSOR(('&sql_id'),NULL,'BASIC +PEEKED_BINDS'));
 SELECT * FROM table(DBMS_XPLAN.DISPLAY_CURSOR(('&sql_id'),CURSOR_CHILD_NO=>NULL,FORMAT=>'+PEEKED_BINDS'));
-
