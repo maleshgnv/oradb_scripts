@@ -58,3 +58,4 @@ order by ps.qcsid, "Server Set" desc, "PX Server";
 
 select distinct qcsid, degree, req_degree
 from v$px_session;
+
