@@ -1,0 +1,1320 @@
+nohup vmstat 2 43200 | while read line; do echo "`date` $line"; done >> vmstat1.log &
+
+nohup  sar -u  2 43200 >> sar.log &
+
+
+cat > a.ksh
+echo "">filelist.ksh
+for i in $(grep "piece handle" /lrnbackup/lcecmv/daily/logs/rman_backup_Lvl0_lcecmv_23_03_19_1830.log|awk '{print $2}'|cut -d= -f2); 
+	do FILEPATH=$(basename $i); 
+	echo "ls -l $FILEPATH" >> ./filelist.ksh; 
+done
+ksh -x filelist.ksh
+
+cat /etc/redhat-release
+
+cat /proc/cpuinfo
+
+dmesg | grep -i DMI
+
+
+
+Most important:
+
+ grep -E "(bulkqa)" listener_12c.log | awk '{print $06}'|cut -d")" -f2|cut -d"=" -f2|sort |uniq -c
+
+
+
+Oracle support Contact:
+
+1.800.223.1711
+
+=======================================================================================
+OS Process status
+
+netstat -natpul | grep 2598   ---> database port
+=======================================================================================
+
+Listener connectios status:
+
+lsnrctl service LISTENER_laxrh5odb01_11G|grep -i established
+
+===========================================================================================
+
+To check load average history:
+
+/dba_common/oswatcher/oswbb/archive/oswtop :
+
+
+ prdoraol7odb03_top_18.09.01.2000.dat
+ prdoraol7odb03_top_18.09.01.2100.dat
+ prdoraol7odb03_top_18.09.01.2200.dat
+ prdoraol7odb03_top_18.09.01.2300.dat
+
+cat prdoraol7odb02_top_19.04.03.0400.dat | egrep -i 'zzz|load|wa'
+
+cat prdoraol7odb01_top_18.11.08.2000.dat | egrep -i 'zzz|load|Cpu'
+
+cat laxrh5odb01_top_18.05.21.0500.dat | egrep -i 'zzz|load'
+===========================================================================
+
+Using this SQL one can find the snapshot interval and snapshot retention.
+
+SELECT extract(day from snap_interval) *24*60+extract(hour from snap_interval) *60+extract(minute from snap_interval) snapshot_Interval,
+extract(day from retention) *24*60+extract(hour from retention) *60+extract(minute from retention) retention_Interval
+FROM dba_hist_wr_control;
+
+
+
+AWR
+--------
+col SNAP_INTERVAL for a30
+set line 200
+SELECT * FROM dba_hist_wr_control where DBID=(select  DBID from v$database);
+
+
+execute dbms_workload_repository.modify_snapshot_settings (interval => 30);
+
+exec DBMS_WORKLOAD_REPOSITORY.MODIFY_SNAPSHOT_SETTINGS(retention=>43200);
+
+Create Manual Snap
+-----------------
+exec DBMS_WORKLOAD_REPOSITORY.CREATE_SNAPSHOT(flush_level=>'ALL');
+
+====================================================================================
+
+IF users are removed from Audit, but not updated their IS_AUDITED to NO in mglcecbq3.acc_audit
+==============================================================================================
+select username,IS_AUDITED from mglcecbq3.acc_audit where IS_AUDITED='YES' 
+and username not in (select USER_NAME from (select * from dba_stmt_audit_opts  union select * from dba_priv_audit_opts));
+
+update mglcecbq3.acc_audit a set IS_AUDITED='NO'
+where IS_AUDITED='YES' and username not in (select USER_NAME from (select * from dba_stmt_audit_opts  union select * from dba_priv_audit_opts));
+
+
+SELECT os_username,SESSIONID,OS_PROCESS,
+     username db_username,
+     terminal,action_name,
+     decode(action_name,'LOGON',TO_CHAR(timestamp,   'DD-MON-YYYY HH24:MI:SS')
+			,'LOGOFF',TO_CHAR(logoff_time, 'DD-MON-YYYY HH24:MI:SS')) Log_on_off_time,
+     decode(RETURNCODE,1017,'FAILED'||'-'||RETURNCODE,'0','SUCCESS'||'-'||RETURNCODE,RETURNCODE) status
+     --,TO_CHAR(timestamp,   'DD-MON-YYYY HH24:MI:SS') LOGON_TIME,
+     --TO_CHAR(logoff_time, 'DD-MON-YYYY HH24:MI:SS') LOGOFF_TIME
+FROM dba_audit_session
+--where username not in ('DBACRON','PERFSTAT') 
+order by timestamp;
+
+
+
+col IS_AUDITED for a10
+set line 200
+set pages 200
+col DB_NAME for a10
+select  sys_context('USERENV','DB_NAME') db_name,u.USERNAME,ACC_TYPE,u.ACCOUNT_STATUS,a.IS_AUDITED 
+from mglcecbq3.acc_audit a,dba_users u,
+(select * from (select * from dba_stmt_audit_opts  union select * from dba_priv_audit_opts))b
+where a.username=u.username
+and a.username=b.USER_NAME
+order by ACC_TYPE,USERNAME;
+
+
+
+===========================================================================
+
+Block change tracking in RMAN:
+
+alter database enable block change tracking using file '/lrnpctconprd/dev01/ctwr/block_change_tracking_ctconprd.dbf';
+
+
+the size of the CTWR dba buffer by looking at v$sgastat:
+
+SELECT * FROM v$sgastat WHERE name like 'CTWR%'; 
+
+col FILENAME for a100
+set lines 400
+select STATUS,FILENAME,sum(BYTES)/1024 from v$block_change_tracking group by STATUS,FILENAME;
+
+
+alter database disable block change tracking;
+
+========================================================================================
+
+rem Find Child Tables for a given parent table 
+
+set echo off
+set verify off
+col COLUMN_NAME for a30
+accept xTable prompt 'Enter Table Name: '
+TTITLE LEFT 'Child Tables for the table: '&xTABLE
+break on TABLE_NAME
+SELECT B.TABLE_NAME, C.COLUMN_NAME, C.POSITION
+FROM DBA_CONSTRAINTS A, DBA_CONSTRAINTS B, DBA_CONS_COLUMNS C
+WHERE A.CONSTRAINT_NAME = B.R_CONSTRAINT_NAME
+AND A.TABLE_NAME = C.TABLE_NAME
+AND A.CONSTRAINT_NAME = C.CONSTRAINT_NAME
+AND A.TABLE_NAME = UPPER('&Table')
+ORDER BY B.TABLE_NAME, C.POSITION;
+
+TTITLE LEFT 'Parent tables for the table: '&xTable
+SELECT A.OWNER,A.TABLE_NAME, C.COLUMN_NAME, C.POSITION
+FROM DBA_CONSTRAINTS A, DBA_CONSTRAINTS B, DBA_CONS_COLUMNS C
+WHERE A.CONSTRAINT_NAME = B.R_CONSTRAINT_NAME
+AND B.TABLE_NAME = C.TABLE_NAME
+AND B.CONSTRAINT_NAME = C.CONSTRAINT_NAME
+AND B.TABLE_NAME = UPPER('&xTable')
+ORDER BY A.TABLE_NAME, C.POSITION;
+
+
+=================================================================================================
+
+
+check constraints:
+
+COLUMN constraint_name     FORMAT A30                
+COLUMN constraint_type     FORMAT A15
+COLUMN search_condition    FORMAT A70
+COLUMN r_constraint_name   FORMAT A30
+COLUMN delete_rule         FORMAT A11 
+COLUMN column_name         FORMAT A30  
+col SEARCH_CONDITION for a40
+
+set line 300
+set pages 10000
+set trimspool on
+
+SELECT 
+   a.constraint_name
+ , DECODE(a.constraint_type
+            , 'P', 'Primary Key'
+            , 'C', 'Check'
+            , 'R', 'Referential'
+            , 'V', 'View Check'
+            , 'U', 'Unique'
+            , a.constraint_type
+   ) constraint_type
+ , b.column_name
+ , a.search_condition
+ , NVL2(a.r_owner, a.r_owner || '.' ||  a.r_constraint_name, null) r_constraint_name
+ , a.delete_rule
+--  , a.status
+FROM 
+   dba_constraints  a
+ , dba_cons_columns b
+WHERE
+     a.owner            = UPPER('lcec')
+ AND a.table_name='USERS'
+ AND a.constraint_name  = b.constraint_name
+ORDER BY
+   a.constraint_name
+ , b.position;
+
+===============================================================================
+
+Column comparision:
+
+COLUMN column_name         FORMAT A30                HEADING "Column Name"
+COLUMN data_type           FORMAT A25                HEADING "Data Type"
+COLUMN nullable            FORMAT A13                HEADing "Null?"
+set line 200
+set pages 0
+set trimspool on
+
+SELECT
+   owner,table_name,column_name
+ , DECODE(nullable, 'Y', ' ', 'NOT NULL') nullable
+ , DECODE(data_type
+              , 'RAW',      data_type || '(' ||  data_length || ')'
+              , 'CHAR',     data_type || '(' ||  data_length || ')'
+              , 'VARCHAR',  data_type || '(' ||  data_length || ')'
+              , 'VARCHAR2', data_type || '(' ||  data_length || ')'
+              , 'NUMBER', NVL2(   data_precision
+                                , DECODE(    data_scale
+                                           , 0
+                                           , data_type || '(' || data_precision || ')'
+                                           , data_type || '(' || data_precision || ',' || data_scale || ')'
+                                  )
+                                , data_type)
+              , data_type
+   ) data_type
+FROM
+   dba_tab_columns
+WHERE
+     owner      = UPPER('&OWNER')
+ AND table_name not like 'BIN$%'
+ORDER BY 
+   owner,table_name,column_name;
+
+=======================================================================================================================================
+
+Datacase creation silent mode:
+
+nohup dbca -silent -createDatabase -templateName General_Purpose.dbc -gdbname atest -sid atest -SysPassword oracle -SystemPassword oracle -storageType FS -datafileDestination /lrnqlcecqa7/dev01/atest -redoLogFileSize 100 -responseFile NO_VALUE -characterSet WE8ISO8859P1 -nationalCharacterSet AL16UTF16 -automaticMemoryManagement false -totalMemory 1024 -recoveryAreaDestination /lrnqlcecqa7/dev01/atest/arch/ -emConfiguration NONE &
+
+
+dbca -silent -deleteDatabase -sourceDB lrntest -sysDBAUserName sys -sysDBAPassword oracle
+
+
+
+
+#!/bin/ksh
+sqlplus -s /nolog <<EOF
+connect STRMADMIN/n3stlef1r
+show user
+@
+spool off;
+exit
+EOF
+
+
+
+
+nohup sqlplus '/ as sysdba' @/backup/exports/idxb/stats_gather_C4423664_schemas.sql &
+
+
+SQL> ALTER DISKGROUP IISPLOAD_DATA CHECK ALL NOREPAIR; 
+
+
+ps -ef|grep pmon
+ps -ef|grep tns
+ps -ef|grep mrp
+ps -ef|grep d.bin
+asmcmd -p lsdg
+/u01/11.2.0.3/grid/bin/olsnodes -n
+crs_stat | awk -F= '/NAME=/{n=$2}/TYPE=/{t=$2}/TARGET=/{g=$2}/STATE=/{s=$2; printf("%-75s%-18s%-15s%-30s\n", n,t,g,s)}'
+crs_stat | awk -F= '/NAME=/{n=$2}/TYPE=/{t=$2}/TARGET=/{g=$2}/STATE=/{s=$2; printf("%-75s%-18s%-15s%-30s\n", n,t,g,s)}'
+/sbin/route -n
+/u01/11.2.0.3/grid/bin/crsctl status res -t
+/u01/11.2.0.4/grid/bin/crsctl check crs
+/u01/app/oracle/product/crs/bin/oifcfg getif
+
+
+
+
+http://gavinsoorma.com/recovery-scenarios/
+
+/u01/app/oracle/product/OEM_HOME/OMS_AGENT/agent_inst/bin/emctl status agent
+
+=========
+example
+
+scp 20150411.112308.expdp_fii_0[4,5,6,7].dmp.gz oracle@75.96.30.226:/orabackup/exports/ggfippew 
+password : oracle
+
+CTL +Z 
+bg 
+disown –h %1
+===========================
+
+
+=============================================
+
+
+
+-- Change snapshot interval to 30mins
+SQL> EXEC dbms_workload_repository.modify_snapshot_settings(interval=>15);
+PL/SQL procedure successfully completed.
+
+
+3318
+
+while true
+> do
+> echo "."
+> sleep 300
+> done &
+
+userid="/ as sysdba"
+dumpfile=expdp_PINBUILD_STGMIT_15Sep15_%U.dmp
+logfile=expdp_PINBUILD_STGMIT_15Sep15.log
+schemas=STGMIT
+parallel=4
+directory=EXPDP_DIR
+cluster=N
+FILESIZE=30G
+
+
+userid="/ as sysdba"
+cluster=N
+dumpfile=expdp_PNAVSTG_15Sep15_%U.dmp
+logfile=expdp_PNAVSTG_15Sep15.log
+FULL=Y
+parallel=4
+directory=EXPDP_DIR
+
+
+REFRESH_DIR
+/ora_nas_backups/oracle/exports/PINBUILD/refresh
+
+crontab -e
+:1,$s/^/## DB Patching ##/g  -- -to comment 
+
+crontab -e
+:1,$s/## DB Patching ##//g --- -- to un comment
+
+
+cat listener_lcec_12c.log | grep nobody | awk '{print $4 $6}' | cut -d "(" -f6,10 | sort | uniq
+
+
+find . -name "*.aud" -mtime +30 -exec rm -fr {} \;
+
+ls -lrt  | grep "Jun 23" | awk {'print $9'} |xargs rm -rf
+
+
+ls -ltr *.aud | head -50 | awk {'print $9'} | xargs ls -l
+
+
+id_rsa.pub
+server 2 - > id_rsa.pub
+server 1 -> authorized_keys
+scp id_rsa.pub to /tmp on server 1
+cat /tmp/id_rsa.pub >> authorized_keys
+server 2 - server 1
+server 2 -> server 1
+/home/oracle/.ssh
+oracle
+ls -lrt .ssh
+ls -lrt .ssh/
+[oracle@nj09mhf0610 ~]$ ls -lrt .ssh/
+total 28
+-rw-r--r-- 1 oracle oinstall 400 Oct 25 2013 id_rsa.pub
+-rw------- 1 oracle oinstall 1671 Oct 25 2013 id_rsa
+-rw-r--r-- 1 oracle oinstall 1600 Oct 25 2013 authorized_keys
+-rw-r--r-- 1 oracle oinstall 16177 Aug 4 16:09 known_hosts
+
+
+
+
+select 'drop '||object_type||' '||owner||'.'||object_name||' cascade constraints;' from dba_objects where owner ='EQI_HCCI' AND OBJECT_TYPE='TABLE';
+select 'drop '||object_type||' '||owner||'.'||object_name||' ;' from dba_objects where owner ='EQI_HCCI' AND OBJECT_TYPE='VIEW';
+select 'drop '||object_type||' '||owner||'.'||object_name||' ;' from dba_objects where owner ='EQI_HCCI' AND OBJECT_TYPE='PROCEDURE';
+select 'drop '||object_type||' '||owner||'.'||object_name||' ;' from dba_objects where owner ='EQI_HCCI' AND OBJECT_TYPE='SEQUENCE';
+select 'drop '||object_type||' '||owner||'.'||object_name||' ;' from dba_objects where owner ='EQI_HCCI' AND OBJECT_TYPE='FUNCTION';
+select 'drop '||object_type||' '||owner||'.'||object_name||' ;' from dba_objects where owner ='EQI_HCCI' AND OBJECT_TYPE='SYNONYM';
+select 'drop '||object_type||' '||owner||'.'||object_name||' ;' from dba_objects where owner ='EQI_HCCI' AND OBJECT_TYPE='MATERIALIZED VIEW';
+select 'drop '||object_type||' '||owner||'.'||object_name||' ;' from dba_objects where owner ='EQI_HCCI' AND OBJECT_TYPE='PACKAGE';
+select 'drop '||object_type||' '||owner||'.'||object_name||' ;' from dba_objects where owner ='EQI_HCCI' AND OBJECT_TYPE='TYPE';
+select 'drop '||object_type||' '||owner||'.'||object_name||' ;' from dba_objects where owner ='EQI_HCCI' AND OBJECT_TYPE='TYPE BODY';
+
+
+dumpfile=expdp_SPCSNAPp1_SPCSNAP_14Nov.dmp
+logfile=impdp_SPCSNAPd6_SPCSNAP_14Nov.log
+remap_schema=SPCSNAP:SPCSNAP
+transform=oid:n
+cluster=n
+directory=EXP_IMP
+=============================================================================================
+mailx -s <subject_name> aniruddha.rajeev.pendse@citi.com  < <file_name>
+
+===========================================================================================
+
+Tablespace space usage:
+
+set linesize 600
+column dummy noprint
+column  pct_used format 999.9       heading "Used (%)"
+column  name    format a16      heading "Tablespace Name"
+column  bytes   format 9,999,999,999,999    heading "Bytes"
+column  used    format 99,999,999,999,999   heading "Used"
+column  free    format 999,999,999,999  heading "Free"
+break   on report
+compute sum of bytes on report
+compute sum of free on report
+compute sum of used on report
+select a.tablespace_name name,
+    b.tablespace_name dummy,
+    sum(b.bytes)/ count( distinct a.file_id||'.'||a.block_id )      bytes,
+    sum(b.bytes)/ count( distinct a.file_id||'.'||a.block_id ) -
+    sum(a.bytes)/ count( distinct b.file_id )        used,
+    sum(a.bytes)/count( distinct b.file_id )                       free,
+    100 * ( (sum(b.bytes)/count( distinct a.file_id||'.'||a.block_id ))
+      -       (sum(a.bytes)/count( distinct b.file_id ) ))
+    / (sum(b.bytes)/count( distinct a.file_id||'.'||a.block_id )) pct_used
+from dba_free_space a, dba_data_files b
+where a.tablespace_name = b.tablespace_name 
+--and  a.tablespace_name in ('USERS')
+group by a.tablespace_name, b.tablespace_name;
+
+select file_name,sum(bytes)/1024/1024,AUTOEXTENSIBLE,sum(MAXBYTES)/1024/1024,tablespace_name from dba_data_files where tablespace_name='LCEC_IDX_10M_06' group by  file_name,tablespace_name,AUTOEXTENSIBLE;
+
+
+============================================================================================
+
+Archive sync status (to be fired on COB):
+
+set lines 120 pages 1000
+select arch.thread# "Thread",appl.sequence# "Last Sequence Applied",arch.sequence# "Last 
+Sequence Received", (arch.sequence# - appl.sequence#) 
+"DiffSeq",round((arch.first_time-appl.first_time)*1440) "DiffMins"
+from  (select thread# ,sequence#,first_time from v$archived_log where (thread#,first_time ) in 
+(select thread#,max(first_time) from v$archived_log group by thread#)) arch, (select thread# 
+,sequence#,first_time from v$log_history where (thread#,first_time ) in (select 
+thread#,max(first_time) from v$log_history group by thread#)) appl  where  arch.thread# = appl.thread# order by 1;
+
+
+
+select NAME,STATE,round(TOTAL_MB/1024)TOTAL_GB ,round(free_mb/1024) FREE_G, round ((FREE_MB/TOTAL_MB)*100,2) PCT_FREE from v$asm_diskgroup ;
+
+select thread#,process,status from gv$managed_standby where process='MRP0';
+
+select THREAD#,max(SEQUENCE#) from v$log_history group by THREAD#;
+
+
+select * from v$recovery_area_usage;
+
+
+select A.*,B.Applied "Last Standby Seq Applied" , A.Received - B.Applied "Gap" from
+(select thread#, max(sequence#) Received 
+from gv$archived_log val, v$database vdb
+where val.resetlogs_change# = vdb.resetlogs_change#
+group by thread#) A,
+(select thread#, max(sequence#) Applied 
+from gv$archived_log val, v$database vdb
+where val.resetlogs_change# = vdb.resetlogs_change#
+and val.applied='YES'
+group by thread# ) B
+where A.thread#=B.thread#
+order by 1;
+
+
+
+RMAN roll-forward steps:
+
+
+select to_char(current_scn) from v$database;	---->standby
+
+backup as compressed backupset incremental from scn 991247 database format '/u02/bkp/stnd_backp_%U.bak';	---->primary
+backup current controlfile for standby format '/u02/stnd_%U.ctl';	---->primary
+
+
+---->standby:
+
+alter database recover managed standby database cancel;
+catalog start with '/u02/bkp';
+recover database noredo;
+shutdown immediate
+startup nomount
+restore standby controlfile from '/u02/stnd_12n6p3qt_1_1.ctl';
+shutdown immediate
+startup mount
+
+if datafile location is different from prod--->
+catalog start with '+DATA/SSSB/DATAFILE';
+switch database to copy;
+
+alter database recover managed standby database disconnectfrom session;
+
+===================================================================================================
+
+
+To check backgrnd proccesses running on COB:
+
+select process,status from v$managed_standby;
+
+
+======================================================================================================
+
+Roles and privileges assigned to a user
+
+select
+  lpad(' ', 2*level) || granted_role "User, his roles and privileges"
+from
+  (
+  /* THE USERS */
+    select 
+      null     grantee, 
+      username granted_role
+    from 
+      dba_users
+    where
+      username like upper('%&enter_username%')
+  /* THE ROLES TO ROLES RELATIONS */ 
+  union
+    select 
+      grantee,
+      granted_role
+    from
+      dba_role_privs
+  /* THE ROLES TO PRIVILEGE RELATIONS */ 
+  union
+    select
+      grantee,
+      privilege
+    from
+      dba_sys_privs
+  )
+start with grantee is null
+connect by grantee = prior granted_role;
+
+
+
+====================================================================================================
+
+
+export of table AUD$ and truncate:
+
+
+parfile:
+
+exp_ARMSP1_auddollar_04aug12.par
+
+file=exp_ARMSP1_auddollar_04aug12.dmp
+log=exp_ARMSP1_auddollar_04aug12.log
+tables=(SYS.AUD$)
+statistics=none
+buffer=300000
+feedback=10000
+
+
+nohup exp "'/ as sysdba'" parfile=exp_ARMSP1_auddollar_04aug12.par &
+
+===================================================================================================
+
+rman full backup with current controlfile:
+
+
+RMAN> run{
+
+allocate channel d1 type disk format '/DDUMPS/CRMSIT/SIEBDEV3/RMAN/SIEBDEV3_%U'; 
+allocate channel d2 type disk format '/DDUMPS/CRMSIT/SIEBDEV3/RMAN/SIEBDEV3_%U';
+allocate channel d3 type disk format '/DDUMPS/CRMSIT/SIEBDEV3/RMAN/SIEBDEV3_%U';
+allocate channel d4 type disk format '/DDUMPS/CRMSIT/SIEBDEV3/RMAN/SIEBDEV3_%U';
+backup as compressed backupset database;
+backup current controlfile;
+release channel d1;
+release channel d2;
+release channel d3;
+release channel d4;
+}
+
+run{
+allocate channel d1 type disk;
+allocate channel d2 type disk;
+allocate channel d3 type disk;
+allocate channel d4 type disk;
+backup as compressed backupset archivelog until sequence=2999 thread=2  format='/DDUMPS/prpcp2/arch_bkp/arch_%U' delete input;
+}
+
+
+5322930364715
+
+
+archivelog from sequence 1046 until sequence 1050 thread 1;
+
+
+70947
+
+RMAN> run
+{
+ ALLOCATE CHANNEL d1 DEVICE TYPE disk;
+SET ARCHIVELOG DESTINATION TO '+MONPROD_ARCH/MONPROD/ARCHIVELOG/2015_06_22/';
+restore archivelog from logseq 4234 until sequence 4235 thread 1;
+}
+
+list backup of archivelog from logseq 4219 until sequence 4233 thread 1;
+========================================================================================================
+
+Finding sql text:
+
+select SID,SERIAL#,username, program,machine,osuser,status,SQL_ADDRESS from v$session where sid=583
+
+select SQL_TEXT from v$sqltext where ADDRESS='0000000AAF430718' order by PIECE;
+
+==================================
+
+To check database hidden parameters:
+
+SELECT 
+a.ksppinm Param , 
+b.ksppstvl SessionVal ,
+c.ksppstvl InstanceVal
+FROM 
+x$ksppi a , 
+x$ksppcv b , 
+x$ksppsv c
+WHERE 
+a.indx = b.indx AND 
+a.indx = c.indx AND 
+a.ksppinm LIKE '/_%' escape '/'
+and a.ksppinm like '%realfree%'
+ORDER BY
+1
+/
+=========================================================================================================
+
+Tablespace report:
+
+set linesize 120 pagesize 1000 
+
+col tablespace_name     heading 'Tablespace'      format a30 truncate
+col total_maxspace_mb   heading 'MB|Max Size'   format 9G999G999
+col total_allocspace_mb heading 'MB|Allocated'  format 9G999G999
+col used_space_mb       heading 'MB|Used'       format 9G999G999D99
+col free_space_mb       heading 'MB|Free with|Autoextend'       like used_space_mb
+col free_space_ext_mb       heading 'MB|Free in|Allocated'       like used_space_mb
+col pct_used            heading '%|Used'          format 999D99
+col pct_free            heading '%|Free'          like pct_used
+
+break on report
+compute sum label "Total Size:" of total_maxspace_mb total_allocspace_mb used_space_mb - free_space_mb (used_space_mb/total_maxspace_mb)*100 on report
+
+select /*+ALL_ROWS */ alloc.tablespace_name,alloc.total_maxspace_mb,
+alloc.total_allocspace_mb,(alloc.total_allocspace_mb - free.free_space_mb) used_space_mb,
+free.free_space_mb+(alloc.total_maxspace_mb-alloc.total_allocspace_mb) free_space_mb,
+free.free_space_mb free_space_ext_mb,
+((alloc.total_allocspace_mb - free.free_space_mb)/alloc.total_maxspace_mb)*100 pct_used,
+((free.free_space_mb+(alloc.total_maxspace_mb-alloc.total_allocspace_mb))/alloc.total_maxspace_mb)*100 pct_free 
+FROM (SELECT tablespace_name, ROUND(SUM(CASE WHEN maxbytes = 0 THEN bytes ELSE maxbytes END)/1048576) total_maxspace_mb,
+ROUND(SUM(bytes)/1048576) total_allocspace_mb FROM dba_data_files
+ WHERE file_id NOT IN (SELECT FILE# FROM v$recover_file) GROUP BY tablespace_name) alloc,
+ (SELECT tablespace_name,SUM(bytes)/1048576 free_space_mb FROM dba_free_space WHERE file_id NOT IN (SELECT FILE# FROM v$recover_file) GROUP BY tablespace_name) free
+ WHERE alloc.tablespace_name = free.tablespace_name (+) and alloc.tablespace_name='LCEC_BULK_TAB_10M_01' 
+ORDER BY pct_used DESC
+/
+
+
+select file_name,sum(bytes)/1024/1024,AUTOEXTENSIBLE,sum(MAXBYTES)/1024/1024,tablespace_name from dba_temp_files where tablespace_name='LCEC_BULK_TAB_10M_01' group by  file_name,tablespace_name,AUTOEXTENSIBLE;
+
+select name,free_mb,total_mb from v$asm_diskgroup;
+
+select file_name,sum(bytes)/1024/1024,AUTOEXTENSIBLE,sum(MAXBYTES)/1024/1024,tablespace_name from dba_temp_files where tablespace_name='TEMP1' group by file_name,tablespace_name,AUTOEXTENSIBLE;
+=====================================================================================================================
+
+ duplicate database to FGN1UAT2
+ BACKUP LOCATION '/DDUMPS/BACKUPS/FGN1UAT1_COLDBACKUP/'
+ NOFILENAMECHECK;
+
+
+
+
+PROD COB Sync status:
+
+to be executed on primary 
+
+
+SET PAGESIZE 124
+COL DB_NAME FORMAT A8
+COL HOSTNAME FORMAT A12
+COL LOG_ARCHIVED FORMAT 999999
+COL LOG_APPLIED FORMAT 999999
+COL LOG_GAP FORMAT 9999
+COL APPLIED_TIME FORMAT A12
+SELECT DB_NAME, HOSTNAME, LOG_ARCHIVED, LOG_APPLIED,APPLIED_TIME,
+LOG_ARCHIVED-LOG_APPLIED LOG_GAP
+FROM
+(
+SELECT NAME DB_NAME
+FROM V$DATABASE
+),
+(
+SELECT UPPER(SUBSTR(HOST_NAME,1,(DECODE(INSTR(HOST_NAME,'.'),0,LENGTH(HOST_NAME),
+(INSTR(HOST_NAME,'.')-1))))) HOSTNAME
+FROM V$INSTANCE
+),
+(
+SELECT MAX(SEQUENCE#) LOG_ARCHIVED
+FROM V$ARCHIVED_LOG WHERE DEST_ID=1 AND ARCHIVED='YES'
+),
+(
+SELECT MAX(SEQUENCE#) LOG_APPLIED
+FROM V$ARCHIVED_LOG WHERE DEST_ID=2 AND APPLIED='YES'
+),
+(
+SELECT TO_CHAR(MAX(COMPLETION_TIME),'DD-MON/HH24:MI') APPLIED_TIME
+FROM V$ARCHIVED_LOG WHERE DEST_ID=2 AND APPLIED='YES'
+);
+
+
+========================================================================================================================
+
+To Find active/inactive total number of sessions.
+
+SELECT 'Currently, '|| (SELECT COUNT(*) FROM gV$SESSION where status='ACTIVE') || ' out of '|| VP.VALUE || ' connections are used.' AS USAGE_MESSAGE 
+FROM V$PARAMETER VP WHERE VP.NAME = 'sessions' 
+
+
+
+=====================================================================================================================
+
+
+Who is blocking to whom --- DEADLOCK
+-----------------------------------------
+
+select s1.username || '@' || s1.machine
+ || ' ( SID=' || s1.sid || ' )  is blocking '
+ || s2.username || '@' || s2.machine || ' ( SID=' || s2.sid || ' ) ' AS blocking_status
+  from gv$lock l1, gv$session s1, gv$lock l2, gv$session s2
+where s1.sid=l1.sid and s2.sid=l2.sid
+   and l1.BLOCK=1 and l2.request > 0
+ and l1.id1 = l2.id1
+  and l2.id2 = l2.id2 ;
+
+=========================================================================================================================
+
+To get DDL/ Object defination:
+
+set head off
+set pages 0
+set long 9999999
+SELECT DBMS_METADATA.GET_DDL('USER','LCEC_CERTMANAGER')   FROM dual;
+
+set head off
+set pages 0
+set long 9999999
+select dbms_metadata.get_ddl('TRIGGER','TR_ADD_LCEC_USER_TO_KE','KE_USER') from dual;
+
+"VENDAVO"."CMP3$264454"
+
+
+select DBMS_METADATA.GET_DDL('TRIGGER','TR_P_PUB_COURSE_VERSION_LOG','SKLCEGEUP') from dual;
+=====================================================================================================================
+
+query to find out unique key constraints.
+
+
+select OWNER,TABLE_NAME,CONSTRAINT_NAME,COLUMN_NAME from all_cons_columns
+where owner='GPP_PROD_OWN'
+and constraint_name='SYS_C0086757'
+order by position;
+
+
+--------------------------------------------------------------------------------------------------- 
+Another way to measure the number of rows that have been processed is to execute the following query while the import is active:
+ 
+select rows_processed
+  from v$sqlarea
+  where  sql_text like 'INSERT %INTO "%'
+    and  command_type  = 2
+    and  open_versions > 0;
+
+
+
+col sql_txt form a60  
+select command_type,sql_id,substr(sql_text,1,60) sql_txt,rows_processed
+from gv$sqlarea  
+where command_type=6
+and rownum < 20 
+and sql_text like '%UPDATE%'
+/ 
+
+ 
+------------------------------------------------------------------------------------------------
+#### TO CHECK IMPORT IS IN PROGRESS##### 
+----------------------------------------
+
+sql> select substr(sql_text,instr(sql_text,'INTO "'),30) table_name,
+     rows_processed,
+     round((sysdate-to_date(first_load_time,'yyyy-mm-dd hh24:mi:ss'))*24*60,1) minutes,
+     trunc(rows_processed/((sysdate-to_date(first_load_time,'yyyy-mm-dd hh24:mi:ss'))*24*60)) rows_per_min
+     from   sys.v_$sqlarea
+     where  sql_text like 'INSERT %INTO "%'
+     and  command_type = 2
+     and  open_versions > 0;
+
+
+
+
+select substr(sql_text,instr(sql_text,'UPDATE "'),30) table_name,
+     rows_processed,
+     round((sysdate-to_date(first_load_time,'yyyy-mm-dd hh24:mi:ss'))*24*60,1) minutes,
+     trunc(rows_processed/((sysdate-to_date(first_load_time,'yyyy-mm-dd hh24:mi:ss'))*24*60)) rows_per_min
+     from   sys.v_$sqlarea
+     where  sql_text like '%PC_HISTORY_WORK%'
+     and  command_type = 6
+     and  open_versions > 0;
+
+==========================================================================================
+
+
+select a.SESSION_ID "sid",c.serial#,a.OS_USER_NAME ,a.object_id,a.LOCKED_MODE,b.owner,b.object_name "lock",d.addr,d.type,d.request 
+from v$locked_object a,dba_objects b,v$session c,v$lock d
+where a.OBJECT_ID=b.OBJECT_ID and a.session_id=c.sid and a.session_id=d.sid
+
+
+select a.SESSION_ID "sid",b.object_name "lock" 
+from v$locked_object a,dba_objects b
+where a.OBJECT_ID=b.OBJECT_ID and b.owner='GPP_SIT2_OWN'
+
+
+============================================================================================
+
+set lines 200;
+col comp_name for a40;
+select COMP_ID,COMP_NAME,VERSION,STATUS from dba_registry;
+
+col comments for a30;
+col action_time for a30;
+select action_time,action,version,comments,id from DBA_REGISTRY_HISTORY;
+
+
+
+=============================================================================================
+
+enabling/disabling tracing:
+
+
+SQL> alter system set events '10046 trace name context forever, level 12';
+
+System altered.
+
+SQL> alter system set events '10046 trace name context off';
+
+System altered.
+
+
+===============================================
+
+checking SYSAUX usage.
+
+select OCCUPANT_NAME,SCHEMA_NAME,SPACE_USAGE_KBYTES/1024 from v$sysaux_occupants order by 3;
+
+
+
+================================================================================
+
+restarting post process on shareplex:
+
+stop post
+abort service post
+start post
+
+
+===============================================================================
+
+PSU/VTM patching
+
+cd /optware/oracle/< ORACLE VERSION>/db/PATCH/PSU<>/XXXXX
+opatch version
+opatch prereq checkConflictAgainstOHWithDetail -phBaseDir . -invPtrLoc $ORACLE_HOME/oraInst.loc
+opatch apply -invPtrLoc $ORACLE_HOME/oraInst.loc
+opatch lsinventory -invPtrLoc $ORACLE_HOME/oraInst.loc
+
+
+impdp  DUMPFILE=EXPDP:expdp_CEERR_table_08Oct.dmp logfile=EXPDP:imp_CEERR_table_08Oct.log TABLE_EXISTS_ACTION=append
+
+exec  DBMS_STATS.GATHER_TABLE_STATS(ownname=>'IWH_HIST_OWNER',TABNAME=>'FT_SETL_REC',PARTNAME=>'MAY_12_3',ESTIMATE_PERCENT=>30,CASCADE=>TRUE,DEGREE=>16);
+
+
+
+Enable/disable blackout:
+
+sudo su - grid
+/u01/app/11.2.0.4/gc_agent12c/agent12c/bin/emctl stop blackout UPGRADE
+
+
+==================================================================
+
+
+1. Issue "$GI_HOME/bin/crsctl stop res ora.crf -init " on all the nodes of cluster.
+2. Locate the config file $GRID_HOME/crf/admin/crf<hostname>.ora
+3. Manually edit the crf<hostname>.ora file on every node of the cluster and
+   change BDBSIZE tag entry and remove the value (set it to blank) or 
+   set it to a desired value, eg. 61511. Do not delete the BDBSIZE tag itself.
+4. Restart ora.crf daemon on every node. 
+
+
+
+=======================================================================
+
+
+RMAN backup details:
+
+select session_key,
+       input_type,
+       status,
+       to_char(start_time,'yyyy-mm-dd hh24:mi') start_time,
+       to_char(end_time,'yyyy-mm-dd hh24:mi')   end_time,
+       output_bytes_display,
+       time_taken_display
+from v$rman_backup_job_details where input_type='DB FULL'
+order by session_key asc;
+
+
+select
+  sid,
+  start_time,
+  totalwork
+  sofar, 
+ (sofar/totalwork) * 100 pct_done
+from 
+   v$session_longops
+where 
+   totalwork > sofar
+AND 
+   opname NOT LIKE '%aggregate%'
+AND 
+   opname like 'RMAN%';
+
+
+
+
+================================
+SELECT owner, segment_name FROM DBA_EXTENTS WHERE file_id = &p1 AND &p2 between block_id AND block_id + blocks - 1 ;
+
+
+select machine,count(1),to_char(min(LOGON_TIME),'DD-MON-YYYY HH24:MI:SS' ) min,to_char(max(LOGON_TIME),'DD-MON-YYYY HH24:MI:SS' ) max from v$session
+where status ='INACTIVE' 
+and machine='ip-10-109-5-20.ec2.internal'
+group by machine order by 2 desc;
+
+select machine,to_char(logon_time,'DD-MON-YY HH24:MI:SS'),status  from v$session where machine='laxco5con15'
+--where machine  in ('laxco5con04','laxco5con13','laxco5con14')
+--and to_char(logon_time,'DD-MON-YY HH24:MI:SS') like '19-MAR-18 02:0%' 
+order by  logon_time;
+
+select 'ALTER SYSTEM KILL SESSION '||''''||SID||','||SERIAL#||''''||' Immediate;' killuser,username,status,OSUSER,machine
+
+select 'ALTER SYSTEM KILL SESSION '||''''||SID||','||SERIAL#||''''||' Immediate;'  from v$session where machine='laxco5con15'
+-- in ('laxco5con04','laxco5con13','laxco5con14')
+--and to_char(logon_time,'DD-MON-YY HH24:MI:SS') like '19-MAR-18 02:1%';
+
+select machine,count(1),status from v$session
+-- where status ='INACTIVE' 
+where machine='laxes4lws26'
+group by status,machine order by 2 desc;
+
+
+set line 200
+set pages 100
+col PERCENT for a10
+col MACHINE for a32
+col EVENT for a30
+col MIN_TIME for a25
+col MAX_TIME for a25
+
+
+SELECT * FROM (
+ SELECT 
+       --a.program
+a.machine
+     , a.sql_id
+     , a.session_state
+     , a.event
+     , count(*)
+     , lpad(round(ratio_to_report(count(*)) over () * 100)||'%',10,' ') percent
+     , MIN(a.sample_time) min_time
+     , MAX(a.sample_time) max_time
+   FROM
+       v$active_session_history a
+   WHERE
+a.sample_time between sysdate - interval '1' hour and sysdate
+and a.MACHINE in ('prdconco5app19','prdconco5app20')
+       --a.sample_time BETWEEN TIMESTAMP'2011-01-10 18:00:00' AND TIMESTAMP'2011-01-10 19:00:00'
+   GROUP BY
+       --a.program
+a.machine
+     , a.sql_id
+     , a.session_state
+     , a.event
+   ORDER BY
+       percent DESC
+)
+WHERE ROWNUM <= 60
+/
+
+
+==============================================================================
+
+[oracle@stgrh5odb01 malesh]$ cat creusr.ksh
+#!/bin/ksh
+export ORAENV_ASK=NO
+export PATH=$PATH:/usr/local/bin:.
+
+       export ORACLE_SID=lcecdb
+       . /usr/local/bin/oraenv
+               $ORACLE_HOME/bin/sqlplus '/ as sysdba'<<EOF> a.log
+               @credba.sql
+EOF
+===========================================================================
+
+
+Any one using the object 
+==============================
+Set line 200
+col machine for a15
+col sid for 99999
+col serial# for 999999
+col lastcall for a15
+col USERNAME for a10
+col OSUSER for a10
+col spid for a15
+col "Running Since" for a15
+col KillSessions for a54
+col OS_KILL for a15
+col PROCESS_CHK for a20
+select   s.username,'alter system kill session '||''''||s.SID||','||s.SERIAL#||''' Immediate;' "KillSessions" ,
+' ps -ef | grep '||p.spid Process_CHK,' kill -9 '||p.spid OS_KILL,status,
+        to_char(LOGON_TIME,'DD-MON-YY HH24:Mi:ss')LOGON_TIME,
+        lpad(to_char(trunc(LAST_CALL_ET/3600)),2,0)||':'||
+        lpad(to_char(trunc(LAST_CALL_ET/60)-(trunc(LAST_CALL_ET/3600)*60)),2,0)||':'||
+        lpad(to_char(LAST_CALL_ET-(trunc(LAST_CALL_ET/60)*60)),2,0) "LASTCALL"
+from     v$session s,v$process p
+where s.paddr=p.addr 
+and s.sid in (SELECT b.session_id 
+FROM   all_objects a,
+      v$locked_object b
+WHERE  a.object_id = b.object_id
+and a.object_name='&objname')
+order by s.sid,LOGON_TIME;
+
+
+============================================================
+
+Find Library cache Blocker/Waiter
+=======================================
+col sid format 9999
+col serial# format 99999999
+col username format A12
+col machine format A20
+col module format A15 word_wrap
+col obj_owner format A10
+col obj_name format A20
+col lock_cnt format A5 heading 'lock|cnt'
+col lock_mode format 99 heading 'lock|mode'
+col lock_req  format 99 heading 'lock|req'
+col pin_cnt format 999 heading 'pin|cnt'
+col pin_mode format 999 heading 'pin|mode'
+col pin_req format 999 heading 'pin|req'
+col event format A30
+col wait_time heading 'wait|time' format 9999
+col seconds_in_Wait heading 'seconds|in_wait' format 99999
+col state format A10 word_wrap
+
+select 'Library cache lock holders/waiters' from dual
+union all
+select '---------------------------------' from dual;
+set heading on
+select
+distinct
+  ses.ksusenum sid, ses.ksuseser serial#, ses.ksuudlna username,KSUSEMNM module,
+  ob.kglnaown obj_owner, ob.kglnaobj obj_name
+  -- lk.kglnaobj, lk.user_name, lk.kgllksnm,
+  --,lk.kgllkhdl,lk.kglhdpar
+  --,trim(lk.kgllkcnt) lock_cnt, lk.kgllkmod lock_mode, lk.kgllkreq lock_req,
+  ,lk.kgllkcnt lck_cnt, lk.kgllkmod lock_mode, lk.kgllkreq lock_req
+  --,lk.kgllkpns, lk.kgllkpnc,pn.kglpnhdl
+--  , (select x$kgllk lk
+, w.state, w.event, w.wait_Time, w.seconds_in_Wait
+from
+ x$kgllk lk,  x$kglob ob,x$ksuse ses--, x$kgllk lk
+ , v$session_wait w
+where lk.kgllkhdl in
+(select kgllkhdl from x$kgllk where kgllkreq >0 )
+and ob.kglhdadr = lk.kgllkhdl
+and lk.kgllkuse = ses.addr
+and w.sid = ses.indx
+order by seconds_in_wait desc
+
+
+
+
+
+
+
+
+-rw-r--r-- 1 oracle dba   2130 Mar 16 03:08 main_RFC-377_1.log
+
+/
+
+
+Sun Mar 18 06:25:56 2018
+ALERT: Compatibility of the database is changed from 10.2.0.1.0 to 11.2.0.0.0.
+..
+..
+..
+Switching redo format version from 10.2.0.1.0 to 11.2.0.0.0 at change 7399477697
+Thread 1 advanced to log sequence 460377 (COMPATIBLE advance)
+Sun Mar 18 06:26:24 2018
+
+
+
+
+set line 300
+col CLIENT_NAME for a60
+col MEAN_JOB_DURATION for a40
+select CLIENT_NAME,STATUS from DBA_AUTOTASK_CLIENT;
+SELECT TASK_NAME, OPERATION_NAME, STATUS FROM DBA_AUTOTASK_TASK;
+SELECT client_name, status, consumer_group, mean_job_duration FROM dba_autotask_client;
+
+
+
+BEGIN
+ DBMS_AUTO_TASK_ADMIN.DISABLE(
+   client_name => 'sql tuning advisor', 
+   operation => NULL, 
+   window_name => NULL);
+END;
+/
+
+BEGIN
+ DBMS_AUTO_TASK_ADMIN.DISABLE(
+   client_name => 'auto space advisor', 
+   operation => NULL, 
+   window_name => NULL);
+END;
+/
+
+select CLIENT_NAME,STATUS from DBA_AUTOTASK_CLIENT;
+
+=============================================================================================
+
+[root@qaloraol7odb01 ~]# hostnamectl status
+   Static hostname: prdoraol7odb01
+Transient hostname: qaloraol7odb01
+         Icon name: computer-vm
+           Chassis: vm
+        Machine ID: 6ad97603d49f46b991ad0c14f46c3880
+           Boot ID: 7a6b2d7e9f534bee93547ed16893204a
+    Virtualization: xen
+  Operating System: Oracle Linux Server 7.2
+       CPE OS Name: cpe:/o:oracle:linux:7:2:server
+            Kernel: Linux 4.1.12-112.14.13.el7uek.x86_64
+      Architecture: x86-64
+
+[root@qaloraol7odb01 ~]# sysctl -a  |grep hostname
+fs.nfs.nsm_use_hostnames = 0
+kernel.hostname = prdoraol7odb01
+sysctl: reading key "net.ipv6.conf.all.stable_secret"
+sysctl: reading key "net.ipv6.conf.default.stable_secret"
+sysctl: reading key "net.ipv6.conf.eth0.stable_secret"
+sysctl: reading key "net.ipv6.conf.lo.stable_secret"
+sysctl: reading key "net.ipv6.conf.virbr0.stable_secret"
+sysctl: reading key "net.ipv6.conf.virbr0-nic.stable_secret"
+
+
+
+tar -xvf oswbb812.tar -C ./prdoraol7odb02/
+cd /dba_common/dba_scripts/oswatcher
+
+================================================================================
+
+
+set pages 900
+col name for a100
+set line 200
+select rownum,a.*
+from
+(
+select name,bytes/1024/1024/1024 gb,
+(select sum(bytes)/1024/1024/1024 from v$datafile) DB_SIZE_GB,
+(select count(1) from v$datafile) Totalfiles
+from v$datafile order by 2 desc
+) a;
+
+=====================================================================================
+
+
+
+set line 200
+col PROPERTY_NAME for a30
+col PROPERTY_VALUE for a30
+col DESCRIPTION for a30
+
+select * from database_properties 
+where PROPERTY_NAME in('NLS_LANGUAGE','NLS_TERRITORY','NLS_ISO_CURRENCY','NLS_CHARACTERSET',
+'NLS_DATE_LANGUAGE','NLS_NCHAR_CHARACTERSET','GLOBAL_DB_NAME','DEFAULT_TBS_TYPE','DBTIMEZONE');
+
+
+=========================================================================================
+
+Schema size table wise:
+
+COLUMN TABLE_NAME FORMAT A32
+COLUMN OBJECT_NAME FORMAT A32
+COLUMN OWNER FORMAT A10
+
+SELECT
+   owner, table_name, TRUNC(sum(bytes)/1024/1024) Meg
+FROM
+(SELECT segment_name table_name, owner, bytes
+ FROM dba_segments
+ WHERE segment_type = 'TABLE'
+ UNION ALL
+ SELECT i.table_name, i.owner, s.bytes
+ FROM dba_indexes i, dba_segments s
+ WHERE s.segment_name = i.index_name
+ AND   s.owner = i.owner
+ AND   s.segment_type = 'INDEX'
+ UNION ALL
+ SELECT l.table_name, l.owner, s.bytes
+ FROM dba_lobs l, dba_segments s
+ WHERE s.segment_name = l.segment_name
+ AND   s.owner = l.owner
+ AND   s.segment_type = 'LOBSEGMENT'
+ UNION ALL
+ SELECT l.table_name, l.owner, s.bytes
+ FROM dba_lobs l, dba_segments s
+ WHERE s.segment_name = l.index_name
+ AND   s.owner = l.owner
+ AND   s.segment_type = 'LOBINDEX')
+WHERE owner='&owner' 
+GROUP BY table_name, owner
+--HAVING SUM(bytes)/1024/1024 > 10  /* Ignore really small tables */
+ORDER BY SUM(bytes) desc
+;
+
+
+
+=======================================================================================
+
+select to_char(completion_date,'DD-MON-YYYY HH24') MONYYYY,p.name partner_name,company,catalog_id,count(1) 
+from lcec.completion_certificate cc, lcec.site s, lcec.partner p
+where completion_date > '01-SEP-2018' and cc.company = s.name and s.partner_id = p.id
+group by to_char(completion_date,'DD-MON-YYYY HH24'),company,catalog_id,p.name
+order by to_date(MONYYYY,'DD-MON-YYYY HH24'),p.name,company;
+
+
+
+=====================================================
+
+
+ SELECT LAST_DAY(ADD_MONTHS(SYSDATE, -2)) + 1 first_day_previous_month
+,LAST_DAY(ADD_MONTHS(SYSDATE, -1)) last_day_previous_month
+,trunc(SYSDATE,'month') first_day_current_month
+,LAST_DAY(SYSDATE) last_day_current_month
+FROM DUAL;
+
+
+
+AWR 30 days: 
+
+ exec DBMS_WORKLOAD_REPOSITORY.MODIFY_SNAPSHOT_SETTINGS(retention=>43200);
+
+
+
+============================================================================================
+
+Failed login count:
+
+col name for a30
+set lines 200 pages 999
+select USER#,NAME,LCOUNT from user$ where LCOUNT>0 order by USER#;
+
+
+col ntimestamp# for a30 heading "Timestamp"
+col userid for a20 heading "Username"
+col userhost for a15 heading "Machine"
+col spare1 for a15 heading "OS User"
+col comment$text for a80 heading "Details" wrap
+set line 200
+
+select ntimestamp#, userid, userhost, spare1, comment$text from sys.aud$ where returncode=1017 order by 1;
+
+====================================================================
+
+SQL bind capture:
+
+SET TRIMSPOOL ON
+SET LINES 200
+SET PAGES 80
+COL BIND_NAME FOR A30
+COL VALUE_STRING FOR A50
+Select sql_id, Name bind_name, value_string from v$sql_bind_capture where sql_id=trim('&SQL_ID');
+column username format a9
+column sql_text format a70
+col EVENT for a20
+
+SELECT a.sid, a.sql_id,b.plan_hash_value,event,status,last_call_et/60 "In Min(s)", c.name, c.position, c.datatype_string, c.value_string
+ FROM v$session a, v$sqlarea b,v$sql_bind_capture c
+WHERE (a.sql_id = '1s89qbn83np7z')
+  AND a.sql_address = b.address
+  and b.sql_id = c.sql_id;
