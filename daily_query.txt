@@ -1318,3 +1318,4 @@ SELECT a.sid, a.sql_id,b.plan_hash_value,event,status,last_call_et/60 "In Min(s)
 WHERE (a.sql_id = '1s89qbn83np7z')
   AND a.sql_address = b.address
   and b.sql_id = c.sql_id;
+
