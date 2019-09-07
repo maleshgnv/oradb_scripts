@@ -167,3 +167,4 @@ where  s.RESOURCE_CONSUMER_GROUP is not null
    and rpd.GROUP_OR_SUBPLAN = rcg.CONSUMER_GROUP
    and rpd.status = 'ACTIVE'
    and vcg.name = s.RESOURCE_CONSUMER_GROUP;
+
