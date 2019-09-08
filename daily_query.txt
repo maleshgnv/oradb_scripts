@@ -5,7 +5,7 @@ nohup  sar -u  2 43200 >> sar.log &
 
 cat > a.ksh
 echo "">filelist.ksh
-for i in $(grep "piece handle" /lrnbackup/lcecmv/daily/logs/rman_backup_Lvl0_lcecmv_23_03_19_1830.log|awk '{print $2}'|cut -d= -f2); 
+for i in $(grep "piece handle" /malbackup/d041/daily/logs/rman_backup_Lvl0_d041_23_03_19_1830.log|awk '{print $2}'|cut -d= -f2); 
 	do FILEPATH=$(basename $i); 
 	echo "ls -l $FILEPATH" >> ./filelist.ksh; 
 done
@@ -21,7 +21,7 @@ dmesg | grep -i DMI
 
 Most important:
 
- grep -E "(bulkqa)" listener_12c.log | awk '{print $06}'|cut -d")" -f2|cut -d"=" -f2|sort |uniq -c
+ grep -E "(d041)" listener_12c.log | awk '{print $06}'|cut -d")" -f2|cut -d"=" -f2|sort |uniq -c
 
 
 
@@ -37,25 +37,25 @@ netstat -natpul | grep 2598   ---> database port
 
 Listener connectios status:
 
-lsnrctl service LISTENER_laxrh5odb01_11G|grep -i established
+lsnrctl service LISTENER_maldb01|grep -i established
 
 ===========================================================================================
 
 To check load average history:
 
-/dba_common/oswatcher/oswbb/archive/oswtop :
+/oswatcher/oswbb/archive/oswtop :
 
 
- prdoraol7odb03_top_18.09.01.2000.dat
- prdoraol7odb03_top_18.09.01.2100.dat
- prdoraol7odb03_top_18.09.01.2200.dat
- prdoraol7odb03_top_18.09.01.2300.dat
+ malodb03_top_18.09.01.2000.dat
+ malodb03_top_18.09.01.2100.dat
+ malodb03_top_18.09.01.2200.dat
+ malodb03_top_18.09.01.2300.dat
 
-cat prdoraol7odb02_top_19.04.03.0400.dat | egrep -i 'zzz|load|wa'
+cat malodb02_top_19.04.03.0400.dat | egrep -i 'zzz|load|wa'
 
-cat prdoraol7odb01_top_18.11.08.2000.dat | egrep -i 'zzz|load|Cpu'
+cat malodb01_top_18.11.08.2000.dat | egrep -i 'zzz|load|Cpu'
 
-cat laxrh5odb01_top_18.05.21.0500.dat | egrep -i 'zzz|load'
+cat maldb01_top_18.05.21.0500.dat | egrep -i 'zzz|load'
 ===========================================================================
 
 Using this SQL one can find the snapshot interval and snapshot retention.
@@ -82,16 +82,8 @@ Create Manual Snap
 exec DBMS_WORKLOAD_REPOSITORY.CREATE_SNAPSHOT(flush_level=>'ALL');
 
 ====================================================================================
-
-IF users are removed from Audit, but not updated their IS_AUDITED to NO in mglcecbq3.acc_audit
+Login Log off audit data
 ==============================================================================================
-select username,IS_AUDITED from mglcecbq3.acc_audit where IS_AUDITED='YES' 
-and username not in (select USER_NAME from (select * from dba_stmt_audit_opts  union select * from dba_priv_audit_opts));
-
-update mglcecbq3.acc_audit a set IS_AUDITED='NO'
-where IS_AUDITED='YES' and username not in (select USER_NAME from (select * from dba_stmt_audit_opts  union select * from dba_priv_audit_opts));
-
-
 SELECT os_username,SESSIONID,OS_PROCESS,
      username db_username,
      terminal,action_name,
@@ -101,29 +93,15 @@ SELECT os_username,SESSIONID,OS_PROCESS,
      --,TO_CHAR(timestamp,   'DD-MON-YYYY HH24:MI:SS') LOGON_TIME,
      --TO_CHAR(logoff_time, 'DD-MON-YYYY HH24:MI:SS') LOGOFF_TIME
 FROM dba_audit_session
---where username not in ('DBACRON','PERFSTAT') 
+--where username not in ('SCOTT','PERFSTAT') 
 order by timestamp;
-
-
-
-col IS_AUDITED for a10
-set line 200
-set pages 200
-col DB_NAME for a10
-select  sys_context('USERENV','DB_NAME') db_name,u.USERNAME,ACC_TYPE,u.ACCOUNT_STATUS,a.IS_AUDITED 
-from mglcecbq3.acc_audit a,dba_users u,
-(select * from (select * from dba_stmt_audit_opts  union select * from dba_priv_audit_opts))b
-where a.username=u.username
-and a.username=b.USER_NAME
-order by ACC_TYPE,USERNAME;
-
 
 
 ===========================================================================
 
 Block change tracking in RMAN:
 
-alter database enable block change tracking using file '/lrnpctconprd/dev01/ctwr/block_change_tracking_ctconprd.dbf';
+alter database enable block change tracking using file '/mald041/dev01/ctwr/block_change_tracking_d041.dbf';
 
 
 the size of the CTWR dba buffer by looking at v$sgastat:
@@ -201,7 +179,7 @@ FROM
    dba_constraints  a
  , dba_cons_columns b
 WHERE
-     a.owner            = UPPER('lcec')
+     a.owner            = UPPER('SCOTT')
  AND a.table_name='USERS'
  AND a.constraint_name  = b.constraint_name
 ORDER BY
@@ -248,17 +226,17 @@ ORDER BY
 
 Datacase creation silent mode:
 
-nohup dbca -silent -createDatabase -templateName General_Purpose.dbc -gdbname atest -sid atest -SysPassword oracle -SystemPassword oracle -storageType FS -datafileDestination /lrnqlcecqa7/dev01/atest -redoLogFileSize 100 -responseFile NO_VALUE -characterSet WE8ISO8859P1 -nationalCharacterSet AL16UTF16 -automaticMemoryManagement false -totalMemory 1024 -recoveryAreaDestination /lrnqlcecqa7/dev01/atest/arch/ -emConfiguration NONE &
+nohup dbca -silent -createDatabase -templateName General_Purpose.dbc -gdbname atest -sid atest -SysPassword oracle -SystemPassword oracle -storageType FS -datafileDestination /mald041/dev01/atest -redoLogFileSize 100 -responseFile NO_VALUE -characterSet WE8ISO8859P1 -nationalCharacterSet AL16UTF16 -automaticMemoryManagement false -totalMemory 1024 -recoveryAreaDestination /mald041/dev01/atest/arch/ -emConfiguration NONE &
 
 
-dbca -silent -deleteDatabase -sourceDB lrntest -sysDBAUserName sys -sysDBAPassword oracle
+dbca -silent -deleteDatabase -sourceDB maltest -sysDBAUserName sys -sysDBAPassword oracle
 
 
 
 
 #!/bin/ksh
 sqlplus -s /nolog <<EOF
-connect STRMADMIN/n3stlef1r
+connect SCOTT/tiger
 show user
 @
 spool off;
@@ -297,7 +275,7 @@ http://gavinsoorma.com/recovery-scenarios/
 =========
 example
 
-scp 20150411.112308.expdp_fii_0[4,5,6,7].dmp.gz oracle@75.96.30.226:/orabackup/exports/ggfippew 
+scp 20150411.112308.expdp_fii_0[4,5,6,7].dmp.gz oracle@192.168.56.1:/orabackup/exports/ggfippew 
 password : oracle
 
 CTL +Z 
@@ -352,7 +330,7 @@ crontab -e
 :1,$s/## DB Patching ##//g --- -- to un comment
 
 
-cat listener_lcec_12c.log | grep nobody | awk '{print $4 $6}' | cut -d "(" -f6,10 | sort | uniq
+cat listener_d041_12c.log | grep nobody | awk '{print $4 $6}' | cut -d "(" -f6,10 | sort | uniq
 
 
 find . -name "*.aud" -mtime +30 -exec rm -fr {} \;
@@ -374,7 +352,7 @@ server 2 -> server 1
 oracle
 ls -lrt .ssh
 ls -lrt .ssh/
-[oracle@nj09mhf0610 ~]$ ls -lrt .ssh/
+[oracle@malsrv01 ~]$ ls -lrt .ssh/
 total 28
 -rw-r--r-- 1 oracle oinstall 400 Oct 25 2013 id_rsa.pub
 -rw------- 1 oracle oinstall 1671 Oct 25 2013 id_rsa
@@ -403,7 +381,7 @@ transform=oid:n
 cluster=n
 directory=EXP_IMP
 =============================================================================================
-mailx -s <subject_name> aniruddha.rajeev.pendse@citi.com  < <file_name>
+mailx -s <subject_name> maletst@yahoo.com  < <file_name>
 
 ===========================================================================================
 
@@ -434,7 +412,7 @@ where a.tablespace_name = b.tablespace_name
 --and  a.tablespace_name in ('USERS')
 group by a.tablespace_name, b.tablespace_name;
 
-select file_name,sum(bytes)/1024/1024,AUTOEXTENSIBLE,sum(MAXBYTES)/1024/1024,tablespace_name from dba_data_files where tablespace_name='LCEC_IDX_10M_06' group by  file_name,tablespace_name,AUTOEXTENSIBLE;
+select file_name,sum(bytes)/1024/1024,AUTOEXTENSIBLE,sum(MAXBYTES)/1024/1024,tablespace_name from dba_data_files where tablespace_name='USER_IDX_10M_06' group by  file_name,tablespace_name,AUTOEXTENSIBLE;
 
 
 ============================================================================================
@@ -667,12 +645,12 @@ FROM (SELECT tablespace_name, ROUND(SUM(CASE WHEN maxbytes = 0 THEN bytes ELSE m
 ROUND(SUM(bytes)/1048576) total_allocspace_mb FROM dba_data_files
  WHERE file_id NOT IN (SELECT FILE# FROM v$recover_file) GROUP BY tablespace_name) alloc,
  (SELECT tablespace_name,SUM(bytes)/1048576 free_space_mb FROM dba_free_space WHERE file_id NOT IN (SELECT FILE# FROM v$recover_file) GROUP BY tablespace_name) free
- WHERE alloc.tablespace_name = free.tablespace_name (+) and alloc.tablespace_name='LCEC_BULK_TAB_10M_01' 
+ WHERE alloc.tablespace_name = free.tablespace_name (+) and alloc.tablespace_name='USER_TAB_10M_01' 
 ORDER BY pct_used DESC
 /
 
 
-select file_name,sum(bytes)/1024/1024,AUTOEXTENSIBLE,sum(MAXBYTES)/1024/1024,tablespace_name from dba_temp_files where tablespace_name='LCEC_BULK_TAB_10M_01' group by  file_name,tablespace_name,AUTOEXTENSIBLE;
+select file_name,sum(bytes)/1024/1024,AUTOEXTENSIBLE,sum(MAXBYTES)/1024/1024,tablespace_name from dba_temp_files where tablespace_name='USER_TAB_10M_01' group by  file_name,tablespace_name,AUTOEXTENSIBLE;
 
 select name,free_mb,total_mb from v$asm_diskgroup;
 
@@ -956,20 +934,20 @@ where status ='INACTIVE'
 and machine='ip-10-109-5-20.ec2.internal'
 group by machine order by 2 desc;
 
-select machine,to_char(logon_time,'DD-MON-YY HH24:MI:SS'),status  from v$session where machine='laxco5con15'
---where machine  in ('laxco5con04','laxco5con13','laxco5con14')
+select machine,to_char(logon_time,'DD-MON-YY HH24:MI:SS'),status  from v$session where machine='malco5con15'
+--where machine  in ('malsrv01','malsrv02')
 --and to_char(logon_time,'DD-MON-YY HH24:MI:SS') like '19-MAR-18 02:0%' 
 order by  logon_time;
 
 select 'ALTER SYSTEM KILL SESSION '||''''||SID||','||SERIAL#||''''||' Immediate;' killuser,username,status,OSUSER,machine
 
-select 'ALTER SYSTEM KILL SESSION '||''''||SID||','||SERIAL#||''''||' Immediate;'  from v$session where machine='laxco5con15'
--- in ('laxco5con04','laxco5con13','laxco5con14')
+select 'ALTER SYSTEM KILL SESSION '||''''||SID||','||SERIAL#||''''||' Immediate;'  from v$session where machine='malsrv01'
+-- in ('malsrv01','malsrv02')
 --and to_char(logon_time,'DD-MON-YY HH24:MI:SS') like '19-MAR-18 02:1%';
 
 select machine,count(1),status from v$session
 -- where status ='INACTIVE' 
-where machine='laxes4lws26'
+where machine='males4lws26'
 group by status,machine order by 2 desc;
 
 
@@ -997,7 +975,7 @@ a.machine
        v$active_session_history a
    WHERE
 a.sample_time between sysdate - interval '1' hour and sysdate
-and a.MACHINE in ('prdconco5app19','prdconco5app20')
+and a.MACHINE in ('test1','test2')
        --a.sample_time BETWEEN TIMESTAMP'2011-01-10 18:00:00' AND TIMESTAMP'2011-01-10 19:00:00'
    GROUP BY
        --a.program
@@ -1014,12 +992,12 @@ WHERE ROWNUM <= 60
 
 ==============================================================================
 
-[oracle@stgrh5odb01 malesh]$ cat creusr.ksh
+[oracle@maldb01 malesh]$ cat creusr.ksh
 #!/bin/ksh
 export ORAENV_ASK=NO
 export PATH=$PATH:/usr/local/bin:.
 
-       export ORACLE_SID=lcecdb
+       export ORACLE_SID=d041
        . /usr/local/bin/oraenv
                $ORACLE_HOME/bin/sqlplus '/ as sysdba'<<EOF> a.log
                @credba.sql
@@ -1105,17 +1083,6 @@ and w.sid = ses.indx
 order by seconds_in_wait desc
 
 
-
-
-
-
-
-
--rw-r--r-- 1 oracle dba   2130 Mar 16 03:08 main_RFC-377_1.log
-
-/
-
-
 Sun Mar 18 06:25:56 2018
 ALERT: Compatibility of the database is changed from 10.2.0.1.0 to 11.2.0.0.0.
 ..
@@ -1157,22 +1124,22 @@ select CLIENT_NAME,STATUS from DBA_AUTOTASK_CLIENT;
 
 =============================================================================================
 
-[root@qaloraol7odb01 ~]# hostnamectl status
-   Static hostname: prdoraol7odb01
-Transient hostname: qaloraol7odb01
+[root@malodb01 ~]# hostnamectl status
+   Static hostname: malodb01
+Transient hostname: malodb01
          Icon name: computer-vm
            Chassis: vm
-        Machine ID: 6ad97603d49f46b991ad0c14f46c3880
-           Boot ID: 7a6b2d7e9f534bee93547ed16893204a
+        Machine ID: 1234gdhfl8570ld
+           Boot ID: 658fmvvn734pph9
     Virtualization: xen
   Operating System: Oracle Linux Server 7.2
        CPE OS Name: cpe:/o:oracle:linux:7:2:server
             Kernel: Linux 4.1.12-112.14.13.el7uek.x86_64
       Architecture: x86-64
 
-[root@qaloraol7odb01 ~]# sysctl -a  |grep hostname
+[root@malodb01 ~]# sysctl -a  |grep hostname
 fs.nfs.nsm_use_hostnames = 0
-kernel.hostname = prdoraol7odb01
+kernel.hostname = malodb01
 sysctl: reading key "net.ipv6.conf.all.stable_secret"
 sysctl: reading key "net.ipv6.conf.default.stable_secret"
 sysctl: reading key "net.ipv6.conf.eth0.stable_secret"
@@ -1182,8 +1149,8 @@ sysctl: reading key "net.ipv6.conf.virbr0-nic.stable_secret"
 
 
 
-tar -xvf oswbb812.tar -C ./prdoraol7odb02/
-cd /dba_common/dba_scripts/oswatcher
+tar -xvf oswbb812.tar -C ./malodb02/
+
 
 ================================================================================
 
@@ -1251,17 +1218,6 @@ GROUP BY table_name, owner
 --HAVING SUM(bytes)/1024/1024 > 10  /* Ignore really small tables */
 ORDER BY SUM(bytes) desc
 ;
-
-
-
-=======================================================================================
-
-select to_char(completion_date,'DD-MON-YYYY HH24') MONYYYY,p.name partner_name,company,catalog_id,count(1) 
-from lcec.completion_certificate cc, lcec.site s, lcec.partner p
-where completion_date > '01-SEP-2018' and cc.company = s.name and s.partner_id = p.id
-group by to_char(completion_date,'DD-MON-YYYY HH24'),company,catalog_id,p.name
-order by to_date(MONYYYY,'DD-MON-YYYY HH24'),p.name,company;
-
 
 
 =====================================================
