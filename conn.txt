@@ -1,0 +1,60 @@
+!uptime
+set line 200
+col MACHINE for a30
+set pages 50
+col RESOURCE_NAME for a15
+col LIMIT_VALUE for a10
+Prompt Checking User Session State , BG (Oracle BACKGROUND Processes)...............
+select * from v$resource_limit where RESOURCE_NAME='processes';
+
+select inst_id,decode(status,'ACTIVE','ACTIVE-USERS','INACTIVE-USERS') status,count(1) from gv$session where type='USER'  group by inst_id,status
+                        union
+select inst_id,decode(status,'ACTIVE','ACTIVE-BG','INACTIVE-BG') status,count(1) from gv$session where type='BACKGROUND' group by inst_id,status order by 1,3 desc;
+
+                        select inst_id,machine, status,count(1)
+                        from gv$session
+                        where type='USER'
+                        and status='ACTIVE'
+                        group by inst_id,machine, status
+                        order by 1, 4 desc;
+
+Prompt Checking User-Schema wise connections...............
+col username for a17
+select inst_id,username,count(1) from gv$session group by inst_id,username order by 1,3 desc;
+
+Prompt Checking Machine wise connections ......................
+ col DB_NAME for a10
+ col db_server_name for a25
+ col CLIENT_APP_MACHINE  for a28
+ col CURR_DATE for a25
+
+ set line 200
+ set pages 100
+ select s.inst_id,to_char(sysdate,'yyyy/mm/dd hh24:mi:ss') curr_date,
+ sys_context('USERENV','DB_NAME')                db_name,
+ sys_context('USERENV','SERVER_HOST')            db_server_name,
+ t.tot_conn 					 curr_tot_db_session,
+ machine client_app_machine,count(1)             client_tot_conn_estab
+ from gv$session s,  (select inst_id,count(1) tot_conn from gv$session group by inst_id )  t
+ where s.inst_id=t.inst_id
+ group by s.inst_id,t.tot_conn,machine order by 1,7;
+
+!uptime
+REM exit;
+
+Prompt Checking Current Wait events from v$session ..........................
+Prompt ==============================================================================================================
+col event for a40
+select event,count(1) from v$session where  status='ACTIVE' group by event order by 2 desc;
+
+
+
+prompt Checking SQL_ID running from number of session and max time taken for that SQLID ..................
+Prompt ==============================================================================================================
+select sql_id,event,machine,username,status,count(*),max(last_call_et)  from v$session 
+where status='ACTIVE' and sql_id is not null
+group by sql_id,event,machine,username,status
+having count(*)>=1
+order by 7 ;
+
+!uptime
