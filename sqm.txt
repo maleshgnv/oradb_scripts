@@ -1,0 +1,36 @@
+
+!uptime
+
+col event for a30
+col CURR_DATE for a22
+set line 200
+set pages 50
+col clientpid for a8
+col sid for a6
+col module for a38
+select to_char(sysdate,'DD-MON-YYYY HH24:MI:SS')curr_date,to_char(sid) sid,serial#,sql_id,event,module,to_char(process) clientpid,FINAL_BLOCKING_SESSION fn_blkg_ssn,round(last_call_et/60,2) "In Mins" from v$session where sql_id='&sqlid' order by 6 desc;
+
+Set trimspool on
+column timecol new_value timestamp
+column dbn new_value dbname
+set termout off
+select to_char(sysdate,'DD-MON-YY_hh24miss') timecol from dual;
+select name dbn from v$database;
+set termout on
+set verify off
+define sqlid=&sqlid
+define sid=&sid
+define serialno=&serialno
+
+spool utib_&sqlid..&sid..&serialno..&dbname..&timestamp..log
+SET TRIMSPOOL ON
+SET TRIM ON
+SET PAGES 0
+SET LINESIZE 1000
+SET LONG 1000000
+SET LONGCHUNKSIZE 1000000
+select DBMS_SQLTUNE.REPORT_SQL_MONITOR(sql_id=>'&sqlid',session_id=>&sid,session_serial=>&serialno,report_level => 'ALL',type=>'TEXT') as report from dual;
+spool off
+undefine sqlid
+undefine sid
+undefine serialno
