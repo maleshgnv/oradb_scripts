@@ -1,0 +1,74 @@
+/*
+http://www.orafaq.com/node/758
+
+Monitoring open cursors
+=========================
+
+I believe a lot of the confusion about open cursors vs. cached cursors comes from the names of the Oracle dynamic performance views used to monitor them. 
+v$open_cursor shows cached cursors, not currently open cursors, by session. 
+If you're wondering how many cursors a session has open, don't look in v$open_cursor. 
+It shows the cursors in the session cursor cache for each session, not cursors that are actually open.
+
+To monitor open cursors, query v$sesstat where name='opened cursors current'. This will give the number of currently opened cursors, by session:
+=================================================================================================================================================
+*/
+--total cursors open, by session
+
+select a.value, s.username, s.sid, s.serial#
+from v$sesstat a, v$statname b, v$session s
+where a.statistic# = b.statistic#  and s.sid=a.sid
+and b.name = 'opened cursors current';
+
+
+-- If you're running several N-tiered applications with multiple webservers, you may find it useful to monitor open cursors by username and machine:
+-- =================================================================================================================================================
+
+--total cursors open, by username & machine
+
+select sum(a.value) total_cur, avg(a.value) avg_cur, max(a.value) max_cur, 
+s.username, s.machine
+from v$sesstat a, v$statname b, v$session s 
+where a.statistic# = b.statistic#  and s.sid=a.sid
+and b.name = 'opened cursors current' 
+group by s.username, s.machine
+order by 1 desc;
+
+
+/*
+Hi all,
+10.2.0
+The users are geting this error while connecting to database.
+ORA-01000: maximum open cursors exceeded. I set the open_cursors limit to 1000 but still the error.
+Whats this cursor and in what way is it causing the issue?How should I fix it?
+thanks
+#################################################################################################################################
+
+
+Often this is caused by an application bug. E.g the application is in a loop, opening cursors, 
+but not closing them. Usually you will need to fix the application code.
+
+
+#################################################################################################################################
+
+Most often this is caused by Java developers not closing resources properly - closing resultsets, statements, etc.
+It is not sufficient to just close a connection.
+#################################################################################################################################
+
+If you look at v$open_cursor you might be able to find the main cursor culprits.
+*/
+
+-- Check who's taking all the cursors:
+SELECT
+sid, user_name, COUNT(*) "Cursors per session" 
+FROM v$open_cursor 
+GROUP BY sid, user_name
+order by 3;
+
+/*
+Then investigate what that user is running.
+Check also your parameter open_cursors, you can increase this parameter but like the others said 
+if your application is not closing the cursors then modifying this parameter is useless 
+because your application will take over the increased value and at the end will fail.
+
+You need to find out who's opening a lot of cursors and why, there's not much you can do here.
+*/
