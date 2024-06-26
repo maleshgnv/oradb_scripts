@@ -1,1 +1,849 @@
-da
+
+
+https://www.support.dbagenesis.com/post/oracle-crsctl-commands-list
+https://tanelpoder.com/posts/oracle-performance-troubleshooting-without-os-access-part-1/
+
+REM Backup Home
+REM ==============
+Things to Backup Before Patching CRS Home (Doc ID 743036.1)
+How to backup a Grid Infrastructure installation for 11.2 to 12.2 (Doc ID 1482803.1)
+Things to Consider Before Upgrading Grid Infrastructure to 18c / 19c And Known Issues (Doc ID 2701425.1)
+
+export BACKUP_DIR=/u01/orasoft/orabin_bkp
+
+cd $GRID_HOME/..
+nohup tar -zcvf $BACKUP_DIR/`hostname`.GridHome.19c.bkup.`date +\%d"."\%m"."\%Y"."\%H"."\%M"."\%S`.tar.gz dbhome > $BACKUP_DIR/nohup.GridHome.19c.bkup.`date +\%d"."\%m"."\%Y"."\%H"."\%M"."\%S` &
+
+
+cd $ORACLE_HOME/.. 
+nohup tar --exclude="dbhome/rdbms/audit" -zcvf $BACKUP_DIR/`hostname`.oraHome.19c.bkup.`date +\%d"."\%m"."\%Y"."\%H"."\%M"."\%S`.tar.gz dbhome > $BACKUP_DIR/nohup.oraHome.19c.bkup.`date +\%d"."\%m"."\%Y"."\%H"."\%M"."\%S` &
+
+Inventory
+------------
+[oracle@malprddb01 orabin_bkp]$ more /etc/oraInst.loc
+inventory_loc=/oracleoem/oracle/oraInventory
+inst_group=oinstall
+
+cd /oracleoem/oracle
+nohup tar -zcvf $BACKUP_DIR/`hostname`.oraInv.bkup.`date +\%d"."\%m"."\%Y"."\%H"."\%M"."\%S`.tar.gz oraInventory > $BACKUP_DIR/nohup.oraHome.19c.bkup.`date +\%d"."\%m"."\%Y"."\%H"."\%M"."\%S` &
+
+To Exclude List of files/folders
+---------------------------------
+tar -zcvf backup.tar.gz -X exclude_file.txt .
+
+nohup tar --exclude="dbhome/rdbms/audit" -zcvf $BACKUP_DIR/`hostname`.GridHome.19c.bkup.`date +\%d"."\%m"."\%Y"."\%H"."\%M"."\%S`.tar.gz dbhome > $BACKUP_DIR/nohup.GridHome.19c.bkup.`date +\%d"."\%m"."\%Y"."\%H"."\%M"."\%S` &
+
+OR
+cat exclude_file.txt
+dbhome/rdbms/audit
+
+nohup tar -X exclude_file.txt -zcvf $BACKUP_DIR/`hostname`.GridHome.19c.bkup.`date +\%d"."\%m"."\%Y"."\%H"."\%M"."\%S`.tar.gz dbhome > $BACKUP_DIR/nohup.GridHome.19c.bkup.`date +\%d"."\%m"."\%Y"."\%H"."\%M"."\%S` &
+
+Restore-Extract to specific Directory - /backup/oracle/dbascp
+---------------------------------------------------------------
+mv scripts scripts.old
+tar -zvxf /backup/oracle/dbascp/orabin_bkp/malprddb01.GridHome.19c.bkup.16.07.2023.16.48.37.tar.gz -C /backup/oracle/dbascp
+
+################################################################################################################
+REM CRON Enable/Disable
+REM ==========================================
+
+crontab -e
+:1,$s/^/## DB Switchover ##/g  -- -to comment
+ 
+crontab -e
+:1,$s/## DB Switchover ##//g --- -- to uncomment
+
+################################################################################################################
+REM Get Alert log location in db
+REM ==========================================
+set pagesize 299
+set lines 299
+col value for a65
+select * from v$diag_info where NAME='Diag Trace';
+
+####################################################################3
+watch uptime
+
+yes 'clear;time uptime;sleep 2'|sh
+
+Note: while connecting to the DR database try " ssh 192.168.56.10 -p 9321 "
+
+REM Sar History
+##########################################
+$(date +%d -d yesterday)
+
+Swap Memory :  sar -S -f /var/log/sa/sa$(date +%d)
+sar -r -f /var/log/sa/sa$(date +%d)
+CPU  : sar -p -f /var/log/sa/sa$(date +%d)
+Load : sar -q -f /var/log/sa/sa$(date +%d)
+	sar -q -s 05:00:00 -e 07:00:00 -f /var/log/sa/sa$(date +%d)
+
+sar -q -f /var/log/sa/sa$$(date +%d -d yesterday)
+	
+IO Wait : sar -u -f /var/log/sa/sa$(date +%d)
+Paging :  sar -B -f /var/log/sa/sa$(date +%d)
+
+sar -A -f /var/log/sa/sa06 > /tmp/sa06_$(uname -n).txt
+
+
+AIX:
+
+How load average is calculated in AIX?
+load average is the "r" column under vmstat.
+
+/var/adm/sa/sa01
+
+sar -q -f /var/adm/sa/sa$(date +%d)
+sar -q -f /var/adm/sa/sa$$(date +%d -d yesterday)
+
+################################################################################################################
+REM Truss - trace system calls and signals
+REM At every system call, truss inspects the process. This *potentially* could slow down the process.
+REM So, Truss critical processes, only when it is necessary to do so
+truss –p 2839
+
+Truss – Few outputs
+truss -d -E -p 1873
+
+To trace a process, print timestamp offset from the start of TRUSS command and print minimal information
+truss –d –p <pid> Example: truss –d –p 23898
+
+To trace a process, send output to a file and print minimal information.
+truss –o /tmp/truss.out –p <pid>
+Example: truss –o /tmp/truss.out –d –p 2389
+
+To trace a process, follow its children and print minimal information
+truss –f –p <pid> Example: truss –f –p 2389
+
+A sqlplus connection process was TRUSSed to get all system calls with –f flag.
+ps –ef|grep oracle
+truss -d -E -f -o /tmp/dbstart.lst -p 2522
+
+To trace a process and include/exclude specific system calls.
+truss -d -E -t read -p 1468
+truss -d -E -t !read -p 1468
+
+################################################################################################################
+REM Strace is the equivalent in Linux. 
+-tt is to print the timestamp with microseconds.
+-T is to print the time spent in the system call.
+
+strace -ttT -p 46793366
+
+################################################################################################################
+REM pfiles can be used to associate this file ids with file names. Pfiles lists the files currently opened by a process. In few unix platform, this can be achieved by lsof command also.
+
+pfiles 2839
+lsof –p 2839
+
+################################################################################################################
+REM Pmap prints a nice memory map of the Process. Various heaps and Stacks are printed here.
+
+pmap -x 2540 |more
+
+pmap –xs <pid>
+-s flag prints Hardware Address Translation.
+
+AIX : procmap 46793366
+
+################################################################################################################
+REM A small shell script, to dump Memory map and stack of a process, in a loop, every 10 seconds
+REM ==========================================
+
+#! /bin/ksh
+pid=$1
+(( cnt=1000 ))
+while [[ $cnt -gt 0 ]];
+do
+date
+pmap -x $pid
+pstack $pid
+echo $cnt
+(( cnt=cnt-1 ))
+sleep 10
+done
+
+
+Linux : pstack 2544
+AIX : procstack 46793366
+
+################################################################################################################
+REM Oradebug short_stack also can be used to get process stack.
+REM ==========================================
+
+SQL> oradebug setmypid
+Statement processed.
+
+SQL> oradebug short_stack
+ksedsts()+1123<-ksdxfstk()+33<-ksdxen_int()+5127<-ksdxen()+14<-
+opiodr()+1075<-ttcpip()+1433<-opitsk()+1536<-opiino()+1653<-
+opiodr()+1075<-opidrv()+814<-sou2o()+87<-opimai_real()+537<-
+ssthrdmain()+334<-main()+203<-_start()+108
+
+SQL> oradebug short_stack
+ksedsts()+1123<-ksdxfstk()+33<-ksdxen_int()+5127<-ksdxen()+14<-
+opiodr()+1075<-ttcpip()+1433<-opitsk()+1536<-opiino()+1653<-
+opiodr()+1075<-opidrv()+814<-sou2o()+87<-opimai_real()+537<-
+ssthrdmain()+334<-main()+203<-_start()+108
+
+################################################################################################################
+REM Kill Local Process
+REM ==========================================
+
+SPID=`ps -ef |grep "LOCAL=NO" |grep -v grep |awk ' {print $2} '`	
+	
+echo $SPID	
+	
+kill -9 $SPID	
+
+################################################################################################################
+REM Free Memory in Shared pool 
+REM ==========================================
+
+set line 200
+COLUMN pool    HEADING "Pool"
+COLUMN name    HEADING "Name"
+COLUMN sgasize HEADING "Allocated MB" FORMAT 999,999,999,999,999
+COLUMN bytes   HEADING "Free MB" FORMAT 999,999,999,999,999
+
+SELECT
+    f.pool
+  , f.name
+  , s.sgasize/1024/1024 sgasize
+  , f.bytes/1024/1024 bytes
+  , ROUND(f.bytes/s.sgasize*100, 2) "% Free"
+FROM
+    (SELECT SUM(bytes) sgasize, pool FROM v$sgastat GROUP BY pool) s
+  , v$sgastat f
+WHERE
+    f.name = 'free memory'
+  AND f.pool = s.pool;
+
+################################################################################################################
+REM How many INACTIVE connection 
+REM ==========================================
+select count(1) from v$session where status='INACTIVE' and type='USER' and last_call_et/60 > 1;
+
+
+################################################################################################################
+REM Kill Sessions
+REM ==========================================
+
+(A) Single Instance
+
+select 'alter system kill session '''||s.sid||','||s.serial#||''' immediate;'
+from v$session s
+where s.type='USER' and s.status in('INACTIVE','KILLED','SNIPED') and round(s.last_call_et/60) > 10;
+
+select 'alter system kill session '''||s.sid||','||s.serial#||''' immediate;'
+from v$session s
+where s.type='USER' and s.machine='malprddb01';
+
+
+select 'alter system kill session '''||s.sid||','||s.serial#||''' immediate;'
+from v$session s
+where s.type='USER' 
+and s.username='ESBUTIL'
+and s.status in('INACTIVE','KILLED','SNIPED');
+
+(B) RAC Instance
+
+select   'alter system kill session '||''''||s.SID||','||s.SERIAL#||',@'||s.INST_ID||''' Immediate;' "RAC-KillSessions" 
+from     gv$session s
+where s.type='USER' and s.status in('INACTIVE','KILLED','SNIPED') and round(s.last_call_et/60) > 10;
+
+(C) Kill RMAN Sessions
+
+SELECT 'ALTER SYSTEM KILL SESSION '||''''||b.sid ||','|| b.serial#||''''||' immediate;'
+from
+v$process a, v$session b 
+where a.addr=b.paddr 
+and client_info like 'rman%';
+
+(D) Kill on Single Intance along with spid
+
+set pages 0
+spool k1.sql
+select 'REM '||s.username||chr(10)||'!kill -9 '||p.spid||chr(10)||
+'alter system kill session '''||s.sid||','||s.serial#||''' immediate;'
+from v$session s, v$process p
+where s.paddr=p.addr
+and s.type='USER'
+and s.status in('INACTIVE','KILLED','SNIPED')
+and round(s.last_call_et/60) > 10;
+spool off
+@k1
+rm k1.sql
+
+
+set pages 0
+spool k11.sql
+select 'REM '||s.username||chr(10)||'!kill -9 '||p.spid||chr(10)||
+'alter system kill session '''||s.sid||','||s.serial#||''' immediate;'
+from v$session s, v$process p
+where s.paddr=p.addr
+and s.type='USER'
+s.machine='malprddb01';
+spool off
+@k11
+rm k11.sql
+
+################################################################################################################
+REM Blocking hierarchy
+REM ==========================================
+set line 200
+set pages 400
+col program for a25
+col LOGON_TIME for a19
+col RUNING_SINCE for a20
+col wait_sess format a14
+col USERNAME for a15
+col MACHINE for a28
+col spid for a10
+col prog for a25
+col OSUSER for a10
+
+select lpad(' ',3*(level-1)) || SID||','||SERIAL# wait_sess,
+BLOCKING_SESSION blk_sess,FINAL_BLOCKING_SESSION FNLBS,status,USERNAME,osuser,sql_id
+--,Prev_sql_id,event
+,substr(program,1,(instr(program,'(')-1)) prog,LOGON_TIME,RUNING_SINCE
+from (
+select s.SID,s.SERIAL#,s.USERNAME,s.osuser,s.sql_id,s.event,s.Prev_sql_id,s.machine,s.STATUS,s.program,s.BLOCKING_SESSION_STATUS,
+s.BLOCKING_INSTANCE,s.BLOCKING_SESSION,s.FINAL_BLOCKING_SESSION,to_char(LOGON_TIME,'DD-MON-YY HH24:Mi:ss')LOGON_TIME,
+lpad(to_char(trunc(LAST_CALL_ET/3600)),2,0)||'Hr : '||
+lpad(to_char(trunc(LAST_CALL_ET/60)-(trunc(LAST_CALL_ET/3600)*60)),2,0)||'Mi : ' ||
+lpad(to_char(LAST_CALL_ET-(trunc(LAST_CALL_ET/60)*60)),2,0)||'Sec' RUNING_SINCE
+from v$session s
+where BLOCKING_SESSION_STATUS='VALID'
+OR SID in (select BLOCKING_SESSION from v$session)
+)
+connect by  prior SID = BLOCKING_SESSION  start with  BLOCKING_SESSION  is null;
+
+
+
+
+################################################################################################################
+REM Print File Name for trace and check if its getting used before remove
+REM ======================================================================
+
+ls -ltr MALUAT2*25*.trc | awk ' {print "fuser -u " $9} ' |sh
+
+################################################################################################################
+REM Which Schedular job is running the SQLID
+REM ======================================================================
+
+set line 200
+col JOB_NAME for a30
+col MACHINE for a20
+col MODULE for a20
+col OSUSER for a10
+col STATUS for a10
+
+select   s.SID,
+s.SERIAL#,
+j.job_name,s.machine,
+--s.EVENT,
+s.module,
+	 s.SQL_ID,
+         s.USERNAME,
+         s.OSUSER,
+         s.STATUS,round(s.last_call_et/60) mins
+from     gv$session s,gv$process p , dba_scheduler_running_jobs j
+where s.paddr=p.addr 
+and s.INST_ID=p.INST_ID
+and s.SID =j.session_id
+and s.INST_ID=j.running_instance
+order by s.INST_ID,s.last_call_et;
+
+
+select   s.INST_ID "NODE_ID",s.SID,p.spid "SPID",s.SERIAL#,s.machine,s.EVENT,s.module,
+	 s.SQL_ID,
+         s.USERNAME,
+         s.OSUSER,
+         s.STATUS,
+         s.PROGRAM,j.owner,j.job_name,j.running_instance
+         to_char(LOGON_TIME,'DD-MON-YY HH24:Mi:ss')LOGON_TIME,
+         lpad(to_char(trunc(LAST_CALL_ET/3600)),2,0)||':'||
+         lpad(to_char(trunc(LAST_CALL_ET/60)-(trunc(LAST_CALL_ET/3600)*60)),2,0)||':'||
+         lpad(to_char(LAST_CALL_ET-(trunc(LAST_CALL_ET/60)*60)),2,0) "LASTCALL"
+from     gv$session s,gv$process p , dba_scheduler_running_jobs j
+where s.paddr=p.addr 
+and s.INST_ID=p.INST_ID
+and s.SID =j.session_id
+and s.INST_ID=j.running_instance
+order by s.INST_ID,s.SQL_ID,LOGON_TIME;
+
+REM  History of all scheduler job runs:
+
+set pagesize 299
+set lines 299
+col JOB_NAME for a24
+col actual_start_date for a56
+col RUN_DURATION for a34
+select job_name,status,actual_start_date,run_duration from DBA_SCHEDULER_JOB_RUN_DETAILS order by ACTUAL_START_DATE desc;
+
+################################################################################################################
+REM Utilization of current redo log ( in % )
+REM ==========================================
+SELECT le.leseq "Current log sequence No",
+100*cp.cpodr_bno/le.lesiz "Percent Full",
+cp.cpodr_bno "Current Block No",
+le.lesiz "Size of Log in Blocks"
+FROM x$kcccp cp, x$kccle le
+WHERE le.leseq =CP.cpodr_seq
+AND bitand(le.leflg,24) = 8;
+
+################################################################################################################
+REM Open database link information
+REM ==========================================
+
+set pagesize 200
+set lines 200
+col db_link for a19
+set long 999
+SELECT db_link,owner_id,logged_on,heterogeneous,open_cursors,in_transaction,update_sent
+FROM gv$dblink
+ORDER BY db_link;
+
+
+
+################################################################################################################
+REM Find optimal undo retention size
+REM ==========================================
+
+SELECT d.undo_size / (1024 * 1024) "ACTUAL UNDO SIZE [MByte]",
+SUBSTR(e.value, 1, 25) "UNDO RETENTION [Sec]",
+(TO_NUMBER(e.value) * TO_NUMBER(f.value) * g.undo_block_per_sec) /
+(1024 * 1024) "NEEDED UNDO SIZE [MByte]"
+FROM (SELECT SUM(a.bytes) undo_size
+FROM gv$datafile a, gv$tablespace b, dba_tablespaces c
+WHERE c.contents = 'UNDO'
+AND c.status = 'ONLINE'
+AND b.name = c.tablespace_name
+AND a.ts# = b.ts#) d,
+gv$parameter e,
+gv$parameter f,
+(SELECT MAX(undoblks / ((end_time - begin_time) * 3600 * 24)) undo_block_per_sec
+FROM v$undostat) g
+WHERE e.name = 'undo_retention'
+AND f.name = 'db_block_size';
+
+################################################################################################################
+REM Long Operations
+REM ==========================================
+
+set lines 190
+set pages 100
+col sid for 9999
+col min_to_go heading 'MIN|TO|GO' for 99999 wrap
+col message for a65 wrap
+col elapsed_mins heading 'ELAPSED|MIN' for 9999999
+col pct_complete heading 'PCT|COMP' for a7
+col SID_Serial# heading 'SID|Serial#' form a11
+
+SELECT  vlops.SID || ',' || vlops.serial# SID_Serial#, vs.status , vlops.message
+       -- ,opname, target, target_desc,
+           -- vlops.target, vlops.sofar, vlops.totalwork, vlops.units,
+           ,vlops.start_time, vlops.last_update_time
+           , ROUND(vlops.time_remaining/60,2) min_to_go
+           ,ROUND((vlops.SOFAR/DECODE(vlops.TOTALWORK,0,1,vlops.TOTALWORK))*100,2) ||'%' PCT_COMPLETE, ROUND(vlops.elapsed_seconds/60,2) ELAPSED_MINS
+ FROM V$SESSION_LONGOPS vlops, v$session vs
+ WHERE vlops.SID = vs.SID
+ AND vlops.serial# = vs.serial#
+and vs.status = 'ACTIVE'
+--  AND vs.SID = 1332
+-- AND vlops.username = 'MAL_AGENT'
+ORDER BY elapsed_mins DESC;
+
+################################################################################################################
+REM Find active transactions in DB
+REM ==========================================
+
+col name format a10
+col username format a8
+col osuser format a8
+col start_time format a17
+col status format a12
+tti 'Active transactions'
+select s.sid,username,t.start_time, r.name, t.used_ublk "USED BLKS",
+decode(t.space, 'YES', 'SPACE TX',
+decode(t.recursive, 'YES', 'RECURSIVE TX',
+decode(t.noundo, 'YES', 'NO UNDO TX', t.status)
+)) status
+from sys.v_$transaction t, sys.v_$rollname r, sys.v_$session s
+where t.xidusn = r.usn
+and t.ses_addr = s.saddr;
+
+################################################################################################################
+REM Find who locked your account
+REM ==========================================
+
+-- Return code 1017 ( INVALID LOGIN ATTEMPT)
+-- Return code 28000 ( ACCOUNT LOCKED)
+set pagesize 1299
+set lines 299
+col username for a15
+col userhost for a13
+col timestamp for a39
+col terminal for a23
+SELECT username,userhost,terminal,timestamp,returncode
+FROM dba_audit_session
+WHERE username='&USER_NAME' and returncode in (1017,28000);
+
+################################################################################################################
+REM Validate - if Index is being used:
+REM ==========================================
+
+
+Verify the Columns invovled in Indexes
+===============================================
+col COLUMN_NAME for a25
+col db_name for a8
+col TABLE_NAME for a20
+col INDEX_NAME for a30
+col COLUMN_NAME for a18
+col TABLE_OWNER for a10
+col INDEX_TYPE for a10
+col OWNER for a10
+col DEGREE for a4
+col CPOSN for a5
+col UNIQUENESS for a9
+col PART for a4
+col STATUS for a7
+col LAST_ANAL for a9
+set line 200
+set pages 100
+select sys_context('USERENV','DB_NAME') db_name,i.TABLE_OWNER,i.TABLE_NAME,i.OWNER,i.INDEX_NAME,i.INDEX_TYPE,c.COLUMN_NAME,to_char(c.COLUMN_POSITION) CPOSN,i.UNIQUENESS,i.PARTITIONED PART,i.STATUS
+,i.LAST_ANALYZED LAST_ANAL,i.DEGREE,i.NUM_ROWS
+--,i.BLEVEL,i.CLUSTERING_FACTOR
+from DBA_INDEXES i, dba_ind_columns c
+where i.OWNER=c.INDEX_OWNER 
+and i.TABLE_NAME=c.TABLE_NAME
+and i.INDEX_NAME=c.INDEX_NAME
+and i.TABLE_NAME in ('&TNAME')
+and i.TABLE_OWNER='&OWNER' order by i.TABLE_NAME,i.INDEX_NAME,8;
+
+select SQL_ID,OBJECT_NAME from v$sql_plan where OBJECT_NAME in ('IDX_1','IDX_2');
+
+################################################################################################################
+REM Resize datafile without ORA-03297
+REM ==========================================
+
+select 'alter database datafile'||' '''||file_name||''''||' resize '||round(highwater+2)||' '||'m'||';' from (
+select /*+ rule */
+a.tablespace_name,
+a.file_name,
+a.bytes/1024/1024 file_size_MB,
+(b.maximum+c.blocks-1)*d.db_block_size/1024/1024 highwater
+from dba_data_files a ,
+(select file_id,max(block_id) maximum
+from dba_extents
+group by file_id) b,
+dba_extents c,
+(select value db_block_size
+from v$parameter
+where name='db_block_size') d
+where a.file_id= b.file_id
+and c.file_id = b.file_id
+and c.block_id = b.maximum
+order by a.tablespace_name,a.file_name);
+
+################################################################################################################
+REM Scn to timestamp and viceversa
+REM ==========================================
+
+REM Scn to timestamp and viceversa
+-- Get current scn value:
+select current_scn from v$database;
+-- Get scn value at particular time:
+select timestamp_to_scn('19-JAN-08:22:00:10') from dual;
+-- Get timestamp from scn:
+select scn_to_timestamp(224292)from dual;
+
+################################################################################################################
+
+REM ==========================================
+
+select q.SQL_ID,q.SQL_TEXT,h.USER_ID,h.PROGRAM,h.MACHINE,h.SAMPLE_TIME
+from  dba_hist_sqltext q, DBA_HIST_ACTIVE_SESS_HISTORY h
+where q.sql_id=h.sql_id
+and h.MACHINE='malprddb01'
+and q.SQL_ID='cj52hx0jq7wzc' ;
+
+set line 200
+col MACHINE for a30
+col SQL_TEXT for a50
+col PROGRAM for a20
+col MODULE for a22
+col SAMPLE_TIME for a25 
+col USER_ID for a9
+--col TSQL_ID for 
+select h.session_id sid,h.session_serial# serial#
+--,h.TOP_LEVEL_SQL_ID TSQL_ID
+,q.SQL_ID,q.SQL_TEXT,decode(h.USER_ID,598,'MALTMTUSR') USER_ID,substr(h.module,1,22) module,h.SAMPLE_TIME
+from  dba_hist_sqltext q, v$active_session_history h
+where q.sql_id=h.sql_id
+and h.USER_ID in (select USER_ID from dba_users where USERNAME='MALTMTUSR')
+and h.MACHINE='malprddb01'
+and q.SQL_ID='67rpdggj6agd0' order by h.SAMPLE_TIME;
+
+
+REM BIND from History
+REM ====================
+set line 200
+col BEGIN_INTERVAL_TIME for a25
+col END_INTERVAL_TIME for a25
+col VALUE_STRING for a35
+col name format a10
+col position format 99
+
+select sn.snap_id,sn.BEGIN_INTERVAL_TIME,sn.END_INTERVAL_TIME,sb.SQL_ID,sb.NAME,sb.position,sb.VALUE_STRING,to_char(sb.last_captured,'DD-MON-YY HH24:MI:SS')last_captured
+from 
+	DBA_HIST_SQLBIND sb,
+	DBA_HIST_SNAPSHOT sn
+where 
+	sb.sql_id='&SQLID' 
+	--and sb.WAS_CAPTURED='YES' 
+	and sn.snap_id=sb.snap_id
+	and sn.BEGIN_INTERVAL_TIME >= to_timestamp('08-NOV-2017 21:00','DD-MON-YYYY HH24:MI')
+        and sn.BEGIN_INTERVAL_TIME <= to_timestamp('08-NOV-2017 21:30','DD-MON-YYYY HH24:MI')
+order by sb.snap_id,sb.NAME;
+
+
+REM My-Self SID
+REM ========================
+set line 200
+col DB_NAME for a10
+col INSTANCE for a10
+col SERVER_HOST for A30
+col CLIENT_HOST for a30
+col USER for a15
+col sid for a5
+set time on
+set timing on
+col IP for a20
+col CURR_DATE for a22
+col  LANG1 for a25
+col  LANG2 for a25
+col AUDSID for a10
+select sys_context('USERENV','SID')SID,
+sys_context('USERENV','SESSIONID') audsid,
+to_char(sysdate,'DD-MON-YYYY hh24:mi:ss') curr_date,
+sys_context('USERENV','DB_NAME') db_name,
+sys_context('USERENV','INSTANCE_NAME') instance,
+sys_context('USERENV','SERVER_HOST')  server_host,
+user,sys_context('USERENV','HOST') client_host
+-- , sys_context('USERENV','IP_ADDRESS') IP
+-- , sys_context('USERENV','LANG') LANG1,
+-- ,sys_context('USERENV','LANGUAGE') LANG2
+from dual;
+
+select sid,serial#,username,status from v$session where sid=sys_context('USERENV','SID');
+
+col "Session Info" form A80
+select 'Sid, Serial#, Aud sid : '|| s.sid||' , '||s.serial#||' , '||
+       s.audsid||chr(10)|| 'DB User / OS User : '||s.username||
+       '   /   '||s.osuser||chr(10)|| 'Machine - Terminal : '||
+       s.machine||'  -  '|| s.terminal||chr(10)||
+ 'OS Process Ids : '||
+       s.process||' (Client)  '||p.spid||' (Server)'|| chr(10)||
+       'Client Program Name : '||s.program "Session Info"
+  from v$process p,v$session s
+ where p.addr = s.paddr
+  and s.sid=sys_context('userenv','sid');
+
+
+Open DB Link Queries
+========================
+SQL> @odbl1.sql
+DB links opened by various machines
+==========================================
+      SID    SERIAL# USERNAME        SQL_ID        STATUS   MACHINE               MINS CLIENTPID       MODULE
+--------- ---------- --------------- ------------- -------- -------------------- ----- --------------- --------------------
+    11487      43297 BASTMTUSR       4pn5j6dgxhk50 ACTIVE   malprddb01           0 3909956             oracle@malprddb01
+                                                                                                       1 (TNS V1-V3)
+SQL> @odbl.sql
+ORIGIN                    GTXID                            LSESSION     USERNAME             SQL_ID        MODULE               S     WAITING
+------------------------- -------------------------------- ------------ -------------------- ------------- -------------------- ----- --------------------------------------------------
+malprddb01-3909956        MALTMT.91c249a1.180.27.341061    11487.43297  MALTMTUSR            4pn5j6dgxhk50 oracle@malprddb01 A     Disk file operations I/O
+
+
+REM RMAN has deleted the archive :
+REM ====================
+select THREAD#,to_char (completion_time, 'yyyy-mm-dd') day
+, round(sum (case when archived='YES' then blocks * block_size /1048576 end), 2) generated_MB
+, round(sum (case when archived='YES' then blocks * block_size /1073741824 end), 2) generated_GB
+, round(sum (case when archived='YES' and deleted='YES' then blocks * block_size /1048576 end), 2) deleted_mb
+, round(sum (case when archived='YES' and deleted='NO' then blocks * block_size /1048576 end), 2) remaining_mb
+from v$archived_log
+where DEST_ID=1 
+group by THREAD#,to_char (completion_time, 'yyyy-mm-dd')
+order by day;
+
+REM Process usage history :
+REM ===========================
+col END_INTERVAL_TIME format a30
+set line 200
+ select s.snap_id, TO_CHAR(s.END_INTERVAL_TIME,'MM/DD/YY HH24:MI:SS') tm, s.instance_number,
+ rl.current_utilization,rl.LIMIT_VALUE,round((rl.current_utilization/rl.LIMIT_VALUE*100),2) "Process Limit %", rl.max_utilization
+ from DBA_HIST_RESOURCE_LIMIT rl, dba_hist_snapshot s
+ where resource_name = 'processes' 
+	and rl.instance_number=1
+	and  s.snap_id = rl.snap_id 
+	and  s.instance_number = rl.instance_number
+order by s.snap_id;
+
+col BEGIN_INTERVAL_TIME for a28
+col END_INTERVAL_TIME for a28
+col RESOURCE_NAME for a10
+SELECT A.SNAP_ID,A.INSTANCE_NUMBER "ID",B.BEGIN_INTERVAL_TIME,B.END_INTERVAL_TIME,A.RESOURCE_NAME,
+CURRENT_UTILIZATION "CURRENT",MAX_UTILIZATION "MAX"
+FROM WRH$_RESOURCE_LIMIT A, WRM$_SNAPSHOT B
+--WHERE A.RESOURCE_NAME LIKE '%session%'
+WHERE A.RESOURCE_NAME LIKE '%process%'
+AND A.SNAP_ID=B.SNAP_ID
+AND A.INSTANCE_NUMBER= B.INSTANCE_NUMBER
+AND ((A.INSTANCE_NUMBER=1
+AND B.BEGIN_INTERVAL_TIME > (SELECT STARTUP_TIME FROM GV$INSTANCE WHERE INSTANCE_NUMBER=1)) OR
+(A.INSTANCE_NUMBER=2 AND B.BEGIN_INTERVAL_TIME >
+(SELECT STARTUP_TIME FROM GV$INSTANCE WHERE INSTANCE_NUMBER=2)))
+order by A.SNAP_ID;
+
+
+
+
+select    a.snap_id AWR_SNAP,
+to_char(b.begin_interval_time,'dd-mon-yyyy hh24:mi:ss') ,
+to_char(b.end_interval_time,'dd-mon-yyyy hh24:mi:ss') ,
+a.resource_name,max_utilization
+from        sys.wrh$_resource_limit A, sys.wrm$_snapshot b
+where    a.resource_name like '%processes%'
+and          a.snap_id=b.snap_id
+and        a.instance_number=b.instance_number
+and        a.instance_number=1
+and        b.begin_interval_time > sysdate - 10 order by a.snap_id;
+
+Just be aware that MAX_UTILIZATION contains the max since the instance
+was started, not the max within the time of the snapshot.
+
+
+How to find number of sessions per hour 
+=============================================
+SELECT
+ to_char(TRUNC(s.begin_interval_time,'HH24'),'DD-MON-YYYY HH24:MI:SS') snap_begin,
+ sum(r.current_utilization) sessions
+FROM
+ dba_hist_resource_limit r,
+ dba_hist_snapshot s
+WHERE ( TRUNC(s.begin_interval_time,'HH24'),s.snap_id ) IN
+( 
+--Select the Maximum of the Snapshot IDs within an hour if more than one snapshot IDs
+--have the same number of sessions within that hour , so then picking one of the snapIds
+SELECT TRUNC(sn.begin_interval_time,'HH24'),MAX(rl.snap_id)
+FROM dba_hist_resource_limit rl,dba_hist_snapshot sn
+WHERE TRUNC(sn.begin_interval_time) >= TRUNC(sysdate-1)
+AND rl.snap_id = sn.snap_id
+AND rl.resource_name = 'sessions'
+AND rl.instance_number = sn.instance_number
+AND ( TRUNC(sn.begin_interval_time,'HH24'),rl.CURRENT_UTILIZATION ) IN
+(
+--Select the Maximum no.of sessions for a given begin interval time
+-- All the snapshots within a given hour will have the same begin interval time when TRUNC is used
+-- for HH24 and we are selecting the Maximum sessions for a given one hour
+SELECT TRUNC(s.begin_interval_time,'HH24'),MAX(r.CURRENT_UTILIZATION) "no_of_sess"
+FROM dba_hist_resource_limit r,dba_hist_snapshot s
+WHERE r.snap_id = s.snap_id
+AND TRUNC(s.begin_interval_time) >= TRUNC(sysdate-7)
+AND r.instance_number=s.instance_number
+AND r.resource_name = 'sessions'
+GROUP BY TRUNC(s.begin_interval_time,'HH24')
+)
+GROUP BY TRUNC(sn.begin_interval_time,'HH24'),CURRENT_UTILIZATION
+)
+AND r.snap_id = s.snap_id
+AND r.instance_number = s.instance_number
+AND r.resource_name = 'sessions'
+GROUP BY
+ to_char(TRUNC(s.begin_interval_time,'HH24'),'DD-MON-YYYY HH24:MI:SS')
+ORDER BY snap_begin
+
+http://rkdba.blogspot.in/2010/04/how-to-find-number-of-sessions-per-hour_26.html
+=====================================================================================
+
+SELECT
+ to_char(TRUNC(s.begin_interval_time,'HH24'),'DD-MON-YYYY HH24:MI:SS') snap_begin,
+ r.instance_number instance,
+ r.current_utilization sessions 
+FROM
+ dba_hist_resource_limit r,
+ dba_hist_snapshot s
+WHERE ( TRUNC(s.begin_interval_time,'HH24'),s.snap_id ) IN
+( 
+--Select the Maximum of the Snapshot IDs within an hour if all of the snapshot IDs
+--have the same number of sessions
+SELECT TRUNC(sn.begin_interval_time,'HH24'),MAX(rl.snap_id)
+FROM dba_hist_resource_limit rl,dba_hist_snapshot sn
+WHERE TRUNC(sn.begin_interval_time) >= TRUNC(sysdate-6)
+AND rl.snap_id = sn.snap_id
+AND rl.resource_name = 'sessions'
+AND rl.instance_number = sn.instance_number
+AND ( TRUNC(sn.begin_interval_time,'HH24'),rl.CURRENT_UTILIZATION ) IN
+(
+--Select the Maximum no.of sessions for a given begin interval time
+SELECT TRUNC(s.begin_interval_time,'HH24'),MAX(r.CURRENT_UTILIZATION) "no_of_sess"
+FROM dba_hist_resource_limit r,dba_hist_snapshot s
+WHERE r.snap_id = s.snap_id
+AND TRUNC(s.begin_interval_time) >= TRUNC(sysdate-6)
+AND r.instance_number=s.instance_number
+AND r.resource_name = 'sessions'
+GROUP BY TRUNC(s.begin_interval_time,'HH24')
+)
+GROUP BY TRUNC(sn.begin_interval_time,'HH24'),CURRENT_UTILIZATION
+)
+AND r.snap_id = s.snap_id
+AND r.instance_number = s.instance_number
+AND r.resource_name = 'sessions'
+ORDER BY snap_begin,instance;
+
+
+################################################################################################################
+REM Starting 12.2.0.1, we can have multiple instances on standby side too with following command.
+REM ==========================================
+Generally, to start the MRP process we use,
+ALTER DATABASE RECOVER MANAGED STANDBY DATABASE DISCONNECT FROM SESSION;
+
+Now this has been enhanced in 12.2.0.1 to run MRP on all stand by instances.
+ALTER DATABASE RECOVER MANAGED STANDBY DATABASE DISCONNECT FROM SESSION INSTANCES ALL;
+
+Now this has been enhanced in 12.2.0.1 to run MRP on specific number of instances, Please note you cannot choose which instances to run.
+ALTER DATABASE RECOVER MANAGED STANDBY DATABASE DISCONNECT FROM SESSION INSTANCES 2;
+
+
+################################################################################################################
+REM Query will list the blocking session details between SYSDATE - 1 AND SYSDATE-23/24 ( PAST)
+REM ==========================================
+
+set pagesize 50
+set linesize 120
+col sql_id format a15
+col inst_id format '9'
+col sql_text format a50
+col module format a10
+col blocker_ses format '999999'
+col blocker_ser format '999999'
+SELECT distinct
+a.sql_id ,
+a.inst_id,
+a.blocking_session blocker_ses,
+a.blocking_session_serial# blocker_ser,
+a.user_id,
+s.sql_text,
+a.module,a.sample_time
+FROM GV$ACTIVE_SESSION_HISTORY a,
+gv$sql s
+where a.sql_id=s.sql_id
+and blocking_session is not null
+and a.user_id <> 0 -- exclude SYS user
+and a.sample_time BETWEEN SYSDATE - 1 AND SYSDATE-23/24
+/
