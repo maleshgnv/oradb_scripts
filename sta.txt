@@ -1,0 +1,15 @@
+Set line 200
+col LAST_ANALYZED for a25
+col OWNER for a15
+col STALE_STATS for a10
+col PART_POSN for 9999
+col PARTITION_NAME for a30
+col TABLE_NAME for a30
+select OWNER,TABLE_NAME,STALE_STATS,USER_STATS,NUM_ROWS,to_char(LAST_ANALYZED,'DD-MON-YY HH24:MI:SS') LAST_ANALYZED ,PARTITION_NAME,PARTITION_POSITION PART_POSN
+from dba_tab_statistics
+where (owner,TABLE_NAME) in
+(select OBJECT_OWNER,OBJECT_NAME from v$sql_plan
+where sql_id='&sql_id' and OBJECT_OWNER is not null)
+AND STALE_STATS='YES'
+order by NUM_ROWS;
+
