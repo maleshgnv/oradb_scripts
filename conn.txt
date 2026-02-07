@@ -1,39 +1,123 @@
 
+set termout off
+alter session set "_hash_join_enabled"=true ; 
+alter session set "_push_join_predicate"=false;
+alter session set "_optimizer_push_pred_cost_based" = false;
+set termout on
+
 !uptime
 set line 200
-col MACHINE for a25
 set pages 50
+set long 999999999
+
+col MACHINE for a25
 col RESOURCE_NAME for a15
 col LIMIT_VALUE for a10
 col INITIAL_ALLOCATION for a20
 col status for a15
+col "Script Executed At"  for a100
+set time on timing on 
+col VALUE for a20
+col USAGE for a10
 
-Prompt Checking User Session State , BG (Oracle BACKGROUND Processes)...............
-select * from v$resource_limit where RESOURCE_NAME='processes';
+SET FEEDBACK ON SQL_ID
+
+Set trimspool on
+set termout off
+set verify off
+
+col rep_start_time new_value rep_start_time
+select to_char(sysdate,'DD-MON-YY HH24:MI:SS') rep_start_time from dual;
+col rep_name new_value rep_name
+
+select 'Perf_HealthChk_' || to_char(sysdate,'DDMONYYYY-hh24.mi.ss') || '_' || host_name || '_' || instance_name || '.log' rep_name from v$instance;
+
+set termout on
+prompt
+prompt This script will generate &rep_name File.
+prompt
+prompt Please wait...
+
+spool &rep_name
+
+Select '-- Script Executed at :'||to_char(sysdate,'DD-MON-YYYY:HH:MI:SS') ||' For database:'||name||'-'||open_mode "Script Executed At" from V$database;
+Prompt ==============================================================================================================
+
+Prompt -- Checking for Allocated Memory ...............
+Prompt ==============================================================================================================
+
+select sga_size_gb,pga_size_gb,Os_size_gb
+from
+(select Decode(VALUE,'0',(select VALUE from v$parameter where NAME='sga_target'),value)/1024/1024/1024 sga_size_gb  
+	from v$parameter where NAME='sga_max_size') sga,
+(select Decode(VALUE,'0',(select VALUE from v$parameter where NAME='pga_aggregate_target' ),value)/1024/1024/1024 pga_size_gb  
+	from v$parameter where NAME='pga_aggregate_limit') pga,
+(SELECT trunc(value/1024/1024/1024) AS Os_size_gb FROM v$osstat WHERE stat_name = 'PHYSICAL_MEMORY_BYTES') OS;
+
+Prompt -- Checking Resource Limit ...............
+Prompt ==============================================================================================================
+
+select * from gv$resource_limit where RESOURCE_NAME='processes' order by INST_ID;
+
+Prompt -- Cursor Usage ...............
+Prompt ==============================================================================================================
+
+select 'session_cached_cursors' parameter, lpad(value, 5) value, decode(value, 0, ' n/a', to_char(100 * used / value, '990') || '%') usage
+from
+  ( select max(s.value) used
+    from v$statname n, v$sesstat s
+    where n.name = 'session cursor cache count' and s.statistic# = n.statistic#
+  ),
+  ( select value from v$parameter where name = 'session_cached_cursors' )
+union all
+select 'open_cursors', lpad(value, 5), to_char(100 * used / value, '990') || '%'
+from
+  ( select max(sum(s.value)) used
+    from v$statname n, v$sesstat s
+    where n.name in ('opened cursors current') and s.statistic# = n.statistic#
+    group by s.sid ),
+  ( select value from v$parameter where name = 'open_cursors' );
+
+Prompt -- Connection Load Balance ..............
+Prompt ==============================================================================================================
 
 select inst_id,count(1) from gv$session group by inst_id order by 2;
 
-select inst_id,decode(status,'ACTIVE','ACTIVE-USERS','INACTIVE-USERS') status,count(1) from gv$session where type='USER'  group by inst_id,status
+Prompt -- Checking User Session State , BG (Oracle BACKGROUND Processes)...............
+Prompt ==============================================================================================================
+
+select inst_id,decode(status,'ACTIVE','ACTIVE-USERS','INACTIVE','INACTIVE-USERS',status) status,count(1) 
+from gv$session where type='USER'  group by inst_id,status
                         union
-select inst_id,decode(status,'ACTIVE','ACTIVE-BG','INACTIVE-BG') status,count(1) from gv$session where type='BACKGROUND' group by inst_id,status order by 1,3 desc;
+select inst_id,decode(status,'ACTIVE','ACTIVE-BG','INACTIVE-BG') status,count(1) 
+from gv$session where type='BACKGROUND' group by inst_id,status order by 1,3 desc;
 
-                        select inst_id,machine, status,count(1)
-                        from gv$session
-                        where type='USER'
-                        and status='ACTIVE'
-                        group by inst_id,machine, status
-                        order by 1, 4 desc;
+Prompt -- Checking Instance wise , Machine Status Count ...............
+Prompt ==============================================================================================================
 
-Prompt Checking User-Schema wise connections...............
+select inst_id,machine, status,count(1)
+from gv$session
+where type='USER'
+and status='ACTIVE'
+group by inst_id,machine, status
+order by 1, 4 desc;
+
+Prompt -- Checking User-Schema wise connections...............
+Prompt ==============================================================================================================
+
 col username for a17
 select inst_id,username,count(1) from gv$session group by inst_id,username order by 1,3 desc;
 
-Prompt Checking User-Schema-status wise connections...............
+Prompt -- Checking User-Schema-status wise connections...............
+Prompt ==============================================================================================================
+
 col username for a17
 select inst_id,username,status,count(1) from gv$session group by inst_id,username,status order by 1,2,4 desc;
 
 
-Prompt Checking Machine wise connections ......................
+Prompt -- Checking Machine wise connections ......................
+Prompt ==============================================================================================================
+
  col DB_NAME for a10
  col db_server_name for a25
  col CLIENT_APP_MACHINE  for a28
@@ -51,20 +135,36 @@ Prompt Checking Machine wise connections ......................
  group by s.inst_id,t.tot_conn,machine order by 1,7;
 
 !uptime
-REM exit;
 
-Prompt Checking Current Wait events from v$session ..........................
+Prompt --List All User whose Session per user crossed more then 50%
+Prompt ---------------------------------------------------------------------
+
+SELECT
+    s.inst_id,u.username,
+    COUNT(s.sid) AS sess_used,
+    TO_NUMBER(p.limit) sess_limit,round((COUNT(s.sid)/TO_NUMBER(p.limit))*100) "Used(%)"
+FROM dba_users u
+JOIN dba_profiles p
+  ON p.profile = u.profile
+ AND p.resource_name = 'SESSIONS_PER_USER'
+LEFT JOIN gv$session s
+  ON s.username = u.username
+WHERE p.limit NOT IN ('UNLIMITED','DEFAULT')
+GROUP BY s.inst_id,u.username, p.limit
+HAVING (COUNT(s.sid)/TO_NUMBER(p.limit))*100 >= 50
+ORDER BY s.inst_id,sess_used DESC;
+
+Prompt -- Checking -ACTIVE-Current Wait events from v$session ..........................
 Prompt ==============================================================================================================
 col event for a40
-select event,count(1) from v$session where  status='ACTIVE' and type='USER' group by event order by 2 desc;
+select INST_ID,event,count(1) from gv$session where  status='ACTIVE' and type='USER' group by INST_ID,event  order by 1,3 desc;
 
 
-Prompt Checking INACTIVE with MIN and MAX time ..........................
+Prompt -- Checking INACTIVE with MIN and MAX time Login time ..........................
 Prompt ==============================================================================================================
+
 col MIN_LOGON_TIME for a25
 col MAX_LOGON_TIME for a25
-set line 200
-set pages 50
 col machine for a30
 select *
 from
@@ -76,52 +176,13 @@ group by INST_ID, machine,STATUS
 )
 order by INST_ID,MACHINE,MIN_LOGON_TIME ;
 
-
-Prompt What PL-SQL program is currently running
-Prompt ==============================================================================================================
-
-col OBJECT_NAME for a30
-col USERNAME for a15
-col OWNER for a15
-col EVENT for a20
-select sid,serial#,s.sql_id,s.username,o.owner,o.object_name,o.object_type,s.status,event,last_call_et/60 mins 
-from v$session s , dba_objects o
-where s.PLSQL_ENTRY_OBJECT_ID=o.object_id
-and s.PLSQL_ENTRY_OBJECT_ID > 0;
-
-prompt Checking Schedular job Running ..................
-Prompt ==============================================================================================================
-
-set line 200
-col JOB_NAME for a30
-col MACHINE for a20
-col MODULE for a20
-col OSUSER for a10
-col STATUS for a10
-
-select   s.SID,
-s.SERIAL#,
-j.job_name,s.machine,
---s.EVENT,
-s.module,
-	 s.SQL_ID,
-         s.USERNAME,
-         s.OSUSER,
-         s.STATUS,round(s.last_call_et/60) mins
-from     gv$session s,gv$process p , dba_scheduler_running_jobs j
-where s.paddr=p.addr 
-and s.INST_ID=p.INST_ID
-and s.SID =j.session_id
-and s.INST_ID=j.running_instance
-order by s.INST_ID,s.last_call_et;
-
-prompt Average Single Block Read Latency for Past One hour ..................
+prompt -- Sysmetric History - Average Single Block Read Latency for Past One hour ..................
 Prompt ============================================================================================================== 
-set lines 500 pages 500
 col BEGIN_TIME for a19
 col END_TIME for a19
 col METRIC_NAME for a45
 col METRIC_UNIT for a15
+col VALUE for 999,999,999.9999
 
 select to_char(BEGIN_TIME,'DD-MON-YY HH24:Mi:SS')BEGIN_TIME, to_char(END_TIME,'DD-MON-YY HH24:Mi:SS') END_TIME, METRIC_NAME, round(value,2) VALUE , METRIC_UNIT
 from v$sysmetric_history
@@ -129,8 +190,16 @@ where metric_name in
 ('Average Synchronous Single-Block Read Latency')
 order by begin_time;
 
-prompt Storage LAtency - Average Single Block Read Latency for Past 1 mins
+prompt -- Sysmetric Current - Storage Latency - Average Single Block Read Latency for Past 1 mins
 Prompt ============================================================================================================== 
+
+col program for a30
+col LOGON_TIME for a19
+col RUNING_SINCE for a20
+col waiting_session format a20
+col USERNAME for a15
+col MACHINE for a28
+col spid for a10
 
 select to_char(BEGIN_TIME,'DD-MON-YY HH24:Mi:SS')BEGIN_TIME, to_char(END_TIME,'DD-MON-YY HH24:Mi:SS') END_TIME, METRIC_NAME, round(value,2) VALUE , METRIC_UNIT
 from v$sysmetric
@@ -138,7 +207,9 @@ where metric_name in
 ('Average Synchronous Single-Block Read Latency')
 order by METRIC_NAME;
 
-set lines 500 pages 500
+prompt -- Sysmetric Summary - Storage Latency - Average Single Block Read Latency for Past 1 mins
+Prompt ============================================================================================================== 
+
 col BEGIN_INTERVAL_TIME for a30
 col METRIC_NAME for a50
 col METRIC_UNIT for a30
@@ -156,7 +227,285 @@ where metric_name in
 order by METRIC_NAME;
 
 
-prompt Checking SQL_ID running from number of session and max time taken for that SQLID ..................
+Prompt  --The RELOADS and INVALIDATIONS columns of v$librarycache are also useful for Library cache tuning.
+prompt  --GETs are associated with locks that occur at parse time
+Prompt  --Each time a statement is parsed, the value for GETS in the  v$librarycache view is incremented by 1.
+Prompt  --The column GETHIT stores the number of times that the SQL and PL/SQL statements issued by appl found 
+Prompt  --a parsed copy of themselves already in memory.When this occurs, there is no parsing of the statement required.
+prompt  --The higher this number is, the better the application is performing.
+prompt  --A well tuned OLTP systems can expect to have GETHITRATIOs of 90% or higher for the SQL Area portion of Libr Cache.
+Prompt  --PINS are related to locks that occur at execution time. 
+Prompt  --Each time a statement is executed, the value for PINS is incremented by 1.
+Prompt  --A well tuned OLTP systems can expect to have PINHITRATIOs of 90% or higher for the SQL Area portion of Libr Cache.
+Prompt ==============================================================================================================
+
+select NAMESPACE,GETHITRATIO*100,PINHITRATIO*100,PINS,RELOADS,(RELOADS/decode(PINS,0,1,pins))*100 "Reload ratio",INVALIDATIONS
+from v$librarycache
+where NAMESPACE in ('SQL AREA','TABLE/PROCEDURE','BODY','TRIGGER','JAVA DATA');
+
+Prompt -- The following query could help us to identify the concerned cursors having high Invalidations
+Prompt ==============================================================================================================
+
+col SQL for a80
+select *
+from
+(
+SELECT sql_id,invalidations,executions,parse_calls,loads,version_count,SUBSTR(sql_text, 1, 80) "SQL"
+FROM v$sqlarea
+ORDER BY invalidations DESC
+) 
+where rownum<=10;
+
+Prompt -- High Version Query - Number of child cursors that are present in the cache under this parent
+Prompt ==============================================================================================================
+
+SELECT sql_id,version_count,loaded_versions,executions,parse_calls,loads
+FROM v$sqlarea
+WHERE version_count > 50
+ORDER BY version_count desc;
+
+Prompt -- High number of Load-Reloads(Number of times the object was loaded or reloaded)
+Prompt ==============================================================================================================
+
+SELECT sql_id,loads,executions,parse_calls,version_count,loaded_versions
+FROM v$sqlarea
+WHERE loads > 50
+ORDER BY loads desc;
+
+
+Prompt -- Wait Chains - Checking Hierarchy-Tree - session waits .................
+Prompt ==============================================================================================================
+
+col OSID for a10
+col BLK_OSID for a10
+
+col wait_sess format a25
+col event for a30
+select lpad(' ',3*(level-1)) || SID||','||sess_serial# ||'-' ||decode(blocker_is_valid,'FALSE','BLOCKER','WAITER') wait_sess,
+instance,osid,BLOCKER_SID,BLOCKER_OSID BLK_OSID,IN_WAIT,NUM_WAITERS,IN_WAIT_SECS,substr(WAIT_EVENT_TEXT,1,30) event
+from v$wait_chains
+connect by  prior SID = blocker_sid  start with  NUM_WAITERS>=1 
+--order by NUM_WAITERS desc;
+
+Prompt -- Checking Hierarchy-Tree - session waits .................
+Prompt ==============================================================================================================
+
+col wait_sess format a15
+col blk_sess for 99999999
+col USERNAME for a15
+col PROG for a20
+col OSUSER for a10
+select SID||','||SERIAL# wait_sess,
+--lpad(' ',3*(level-1)) || SID||','||SERIAL# wait_sess,
+BLOCKING_SESSION blk_sess,FINAL_BLOCKING_SESSION FNLBS,status,USERNAME,osuser,sql_id
+--,Prev_sql_id,event
+,substr(program,1,(instr(program,'(')-1)) prog,to_char(LOGON_TIME,'DD-MON-YY HH24:Mi:ss')LOGON_TIME
+,lpad(to_char(trunc(LAST_CALL_ET/3600)),2,0)||'Hr : '||
+lpad(to_char(trunc(LAST_CALL_ET/60)-(trunc(LAST_CALL_ET/3600)*60)),2,0)||'Mi : ' ||
+lpad(to_char(LAST_CALL_ET-(trunc(LAST_CALL_ET/60)*60)),2,0)||'Sec' RUNING_SINCE
+from gv$session s
+where (INST_ID,sid) in 
+	(select instance,SID from v$wait_chains	connect by  prior SID = blocker_sid  start with  NUM_WAITERS>=1);
+
+Prompt -- Session using Temp Space more then 500M
+Prompt ==============================================================================================================
+
+col SID_SERIAL for a18
+col MODULE for a25
+col OSUSER for a15
+col TABLESPACE for a13
+col USERNAME for a18
+col spid for a10
+
+SELECT   S.sid || ',' || S.serial# sid_serial, S.username, S.osuser, to_char(P.spid)spid,
+         S.module, s.sql_id,s.status,
+         SUM (T.blocks) * TBS.block_size / 1024 / 1024 mb_used, T.tablespace,
+         COUNT(*) sort_ops
+FROM     v$sort_usage T, v$session S, dba_tablespaces TBS, v$process P
+WHERE    T.session_addr = S.saddr
+AND      S.paddr = P.addr
+AND      T.tablespace = TBS.tablespace_name
+--AND      T.tablespace = 'TEMP1'
+AND s.status='ACTIVE'
+GROUP BY S.sid, S.serial#, S.username, S.osuser, P.spid, S.module,
+         S.program, s.sql_id,s.status,TBS.block_size, T.tablespace
+having 	SUM (T.blocks) * TBS.block_size / 1024 / 1024 >= 500
+ORDER BY 8,sid_serial;
+
+
+Prompt -- What PL-SQL program is currently running
+Prompt ==============================================================================================================
+
+col usrname for a12
+col OWNER for a12
+col OSUSER for a10
+col evnt for a18
+col SID# for a6
+col client_pid for a10
+col serial for a8
+col last_call for 99,999
+col logon for a20
+col obj_typ for a12
+col obj_name for a19
+col inst for a3
+col last_call for 9999
+col status for a8
+set line 200
+
+SELECT /*+
+    LEADING(S O)
+    USE_HASH(S)
+    PARALLEL(O 4)
+    PARALLEL(S 4)
+    ORDERED
+*/
+to_char(s.INST_ID) inst,to_char(s.sid) sid#,to_char(s.serial#) serial,to_char(s.process) client_pid,s.sql_id,
+s.username usrname,o.owner,o.object_name obj_name,o.object_type obj_typ,s.status,round(last_call_et/60) last_call ,
+round(((sysdate-s.sql_exec_start)*24*60),2) sql_run_sec,substr(event,1,18) evnt
+from gv$session s , dba_objects o
+where s.PLSQL_ENTRY_OBJECT_ID=o.object_id
+and s.PLSQL_ENTRY_OBJECT_ID IS NOT NULL
+and s.PLSQL_ENTRY_OBJECT_ID > 0
+and s.type='USER'
+and s.status = 'ACTIVE' 
+order by inst,sql_run_sec;
+
+
+prompt -- Checking Schedular job Running ..................
+Prompt ==============================================================================================================
+
+set line 200
+col JOB_NAME for a20
+col MACHINE for a25
+col MODULE for a20
+col OSUSER for a10
+col STATUS for a10
+col INST_ID for 9999
+col SID for 99999
+col USERNAME for a15
+col inst for a3
+
+select to_char(s.INST_ID) inst,s.SID,
+s.SERIAL#,
+j.job_name,s.machine,
+--s.EVENT,
+s.module,
+         s.SQL_ID,
+         s.USERNAME,
+         s.OSUSER,
+         s.STATUS,round(s.last_call_et/60) mins
+from     gv$session s,gv$process p , dba_scheduler_running_jobs j
+where s.paddr=p.addr
+and s.INST_ID=p.INST_ID
+and s.SID =j.session_id
+and s.INST_ID=j.running_instance
+order by s.INST_ID,s.last_call_et;
+
+
+prompt -- Checking Wait Class Percent  ..................
+Prompt ==============================================================================================================
+
+SELECT  wait_class,
+        ROUND(100 * (total_waits / sum_waits),2) total_waits_pct,
+        ROUND(100 * (time_waited / sum_time),2) time_waited_pct
+FROM
+(   SELECT wait_class,
+        total_waits,
+        time_waited
+    FROM    v$system_wait_class
+    WHERE   wait_class != 'Idle'
+),
+(
+    SELECT  SUM(total_waits) sum_waits,
+        SUM(time_waited) sum_time
+    FROM    v$system_wait_class
+    WHERE   wait_class != 'Idle'
+)
+ORDER BY 3 DESC;
+
+prompt -- Checking Executed DDLs from OPEN Cursors ..................
+Prompt ==============================================================================================================
+
+col USER_NAME for a15
+col SQL_TEXT for a50
+col PARSING_USER for a15
+col FIRST_LOAD_TIME for a20
+col LAST_LOAD_TIME for a20
+col inst for a3
+col module for a20
+col MACHINE for a20
+
+set line 200
+set pages 50
+
+/*+ USE_HASH(oc sa) */
+WITH cmd AS (
+  SELECT c.command_type, c.command_name
+  FROM   v$sqlcommand c
+)
+SELECT DISTINCT
+    TO_CHAR(s.inst_id) AS inst,
+    oc.sid, s.serial#, oc.user_name, s.status, s.machine,oc.last_sql_active_time,
+    --TO_CHAR(oc.last_sql_active_time,'DD-MON-YYYY HH24:MI:SS') AS last_sql_active_time,
+    COALESCE(s.module, SUBSTR(s.program,1,22)) AS module,
+    oc.sql_id, oc.sql_text
+FROM gv$session s
+JOIN gv$open_cursor oc
+  ON oc.inst_id = s.inst_id
+ AND oc.sid     = s.sid
+JOIN gv$sqlarea sa
+  ON sa.sql_id  = oc.sql_id
+JOIN cmd
+  ON cmd.command_type = sa.command_type
+WHERE s.type = 'USER'
+  AND s.sql_id IS NOT NULL
+  AND cmd.command_name IN (
+        'CREATE','ALTER','DROP','TRUNCATE',
+        'GRANT','REVOKE','COMMENT','RENAME',
+        'ADMINISTER','CHANGE'
+      )
+  AND cmd.command_name <> 'ALTER SESSION'
+ORDER BY last_sql_active_time DESC;
+
+prompt -- Checking for incomplete checkpoint 
+Prompt ==============================================================================================================
+SELECT CREATION_TIME, REASON FROM DBA_OUTSTANDING_ALERTS WHERE REASON LIKE '%Checkpoint not complete%';
+
+/*
+col ORIGINATING_TIMESTAMP for a50
+set line 200
+col MESSAGE_TEXT for a50
+SELECT 
+    ORIGINATING_TIMESTAMP,
+    MESSAGE_TEXT
+FROM 
+    V$DIAG_ALERT_EXT
+WHERE 
+    ORIGINATING_TIMESTAMP > SYSDATE - (8/24) --hours
+--    ORIGINATING_TIMESTAMP > SYSDATE - 40 --Days
+    AND MESSAGE_TEXT LIKE '%Checkpoint not complete%'
+ORDER BY 
+    ORIGINATING_TIMESTAMP;
+*/
+
+
+
+prompt -- Checking Server Resources allocated ..
+Prompt ==============================================================================================================
+
+SELECT
+    (SELECT VALUE FROM v$osstat WHERE stat_name = 'NUM_CPUS') AS cpu_count,
+    (SELECT VALUE FROM v$osstat WHERE stat_name = 'NUM_CPU_CORES') AS cpu_cores,
+    (SELECT VALUE FROM v$osstat WHERE stat_name = 'NUM_CPU_SOCKETS') AS cpu_sockets,
+    (SELECT round(VALUE/1024/1024/1024) FROM v$osstat WHERE stat_name = 'PHYSICAL_MEMORY_BYTES') AS physical_memory_gb,
+    (SELECT round(SUM(value)/1024/1024/1024) FROM v$sga) AS sga_total_GB,
+    (SELECT round(value/1024/1024/1024) FROM v$pgastat WHERE name = 'total PGA allocated') AS pga_total_GB
+    --,(SELECT SUM(bytes)/1024/1024/1024 FROM dba_data_files) +
+    -- NVL((SELECT SUM(bytes)/1024/1024/1024 FROM dba_temp_files), 0) AS total_alloc_dbsz_gb
+FROM
+    dual;
+
+prompt -- Checking SQL_ID running from number of session and max time taken for that SQLID ..................
 Prompt ==============================================================================================================
 /*
 select sql_id,event,machine,username,status,count(*),max(last_call_et)  from v$session
@@ -166,19 +515,74 @@ having count(*)>=1
 order by 7 ;
 */
 
+col inst for a3
+col INST_ID for 9999
 col COMMAND_NAME for a14
 col event for a25
-select s.sql_id,c.command_name,substr(s.event,1,25) event,s.machine,s.username,s.status,count(*),max(s.last_call_et)
-from v$session s,v$sqlcommand c
-where s.command=c.command_type
+col COMMAND_NAME for a14
+col event for a25
+col machine for a15
+col STATUS for a6
+col Sql_Dur_Sec for 9999999 heading 'SQL|Dur|Sec' JUSTIFY CENTER
+col LCE_sec for 9999999 heading 'LAST|CALL_ET|Sec' JUSTIFY CENTER
+col SIW_sec for 9999999 heading 'Secs_In|wait|Event' JUSTIFY CENTER
+
+select to_char(s.INST_ID) inst
+,s.sql_id,c.command_name,substr(s.event,1,18) event,s.osuser,substr(s.machine,1,15) machine,s.username,s.status,count(*)
+,max(round(((sysdate-sql_exec_start)*24*60*60),2)) Sql_Dur_Sec
+,max(SECONDS_IN_WAIT) SIW_sec
+,max(s.last_call_et) LCE_sec
+from gv$session s,gv$sqlcommand c
+where s.INST_ID=c.INST_ID
+and s.command=c.command_type
 and s.status='ACTIVE'
 and s.type='USER'
 and s.sql_id is not null
 and s.USERNAME is not null
-and s.event not like 'SQL*Net message%'
-group by s.sql_id,c.command_name,s.event,s.machine,s.username,s.status
+-- and s.event not like 'SQL*Net message%'
+group by s.INST_ID,s.sql_id,c.command_name,s.event,s.osuser,s.machine,s.username,s.status
 having count(*)>=1
-order by 8 ;
+order by 1,10 ;
 
 
-!uptime
+set heading off
+set termout off
+col time_taken new_value time_taken
+select  'Report Generation took : ' || trunc( (sysdate - to_date('&&rep_start_time','DD-MON-YY HH24:MI:SS'))*24 ) || ' Hrs, ' || 
+	    trunc(mod((sysdate - to_date('&&rep_start_time','DD-MON-YY HH24:MI:SS'))*24*60, 60)) ||' Mins, '||
+	    trunc(mod((sysdate - to_date('&&rep_start_time','DD-MON-YY HH24:MI:SS'))*24*60*60, 60)) || ' Secs.' time_taken from dual;
+
+set termout on
+set heading on
+
+spool off
+
+prompt -- OS Details ....
+host echo "...............OS Server Load ..................." |tee -a &rep_name
+Prompt ==============================================================================================================
+
+host uptime |tee -a &rep_name
+
+host if [ `uname -s` == "AIX" ] ; then lparstat -i; fi |tee -a &rep_name
+host if [ `uname -s` == "AIX" ] ; then lparstat 1 5; fi |tee -a &rep_name
+
+host echo "Top 10 Memory Processes ..................." |tee -a &rep_name
+host if [ `uname -s` == "AIX" ] ; then svmon -O summary=basic,unit=GB; fi |tee -a &rep_name
+host if [ `uname -s` == "Linux" ] ; then free -gt; fi |tee -a &rep_name
+host if [ `uname -s` == "Linux" ] ; then ps -o pid,user,%mem,size,command ax | sort -b -k3 -r |head -10; fi |tee -a &rep_name
+
+host echo "DCS Agent status ..................." |tee -a &rep_name
+host if [ `uname -s` == "AIX" ] ; then lssrc -a |grep -i ds_agent; fi |tee -a &rep_name
+
+host echo ".................Checking DAM/DCS/RMAN/EXP/IMP/Find process running ..................." |tee -a &rep_name
+
+host ps -ef |egrep 'find|gzip|exp|imp|rman|sdcssagent|ragent'|egrep -v 'egrep|grep|mice|java' |tee -a &rep_name
+
+host echo " ...............Health Check Complete ........." |tee -a &rep_name
+host echo &&time_taken |tee -a &rep_name
+
+
+
+REM Filter Query running more then 8 hrs -> and s.sql_exec_start>sysdate-8/24
+REM exit;
+		
