@@ -1,4 +1,4 @@
-
+Rem Author: Malesh Gummula
 set termout off
 alter session set "_hash_join_enabled"=true ; 
 alter session set "_push_join_predicate"=false;
